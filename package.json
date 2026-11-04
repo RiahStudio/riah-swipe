@@ -1,0 +1,44 @@
+{
+  "name": "riah-swipe",
+  "version": "1.0.0",
+  "description": "A swipe board for reviewing AI-generated cards and images (keep / revise / discard), with an MCP server for agents.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Riah Harris <https://riahstudio.com>",
+  "bin": {
+    "riah-swipe": "server/serve.mjs",
+    "riah-swipe-mcp": "server/swipe-mcp.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server/serve.mjs",
+    "mcp": "node server/swipe-mcp.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "files": [
+    "board",
+    "server",
+    "skills",
+    "examples",
+    "docs",
+    "brand"
+  ],
+  "keywords": [
+    "mcp",
+    "swipe",
+    "review",
+    "ai",
+    "images",
+    "claude-code"
+  ],
+  "homepage": "https://github.com/RiahStudio/riah-swipe#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RiahStudio/riah-swipe.git"
+  },
+  "bugs": {
+    "url": "https://github.com/RiahStudio/riah-swipe/issues"
+  }
+}

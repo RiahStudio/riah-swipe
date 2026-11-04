@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  
+  <rect width="1200" height="630" fill="#0F0F11"/>
+  <!-- card stack, right side -->
+  <rect x="800" y="140" width="240" height="330" rx="14" fill="#141417" stroke="rgba(255,255,255,0.12)" stroke-width="2" transform="rotate(-9 920 305)"/>
+  <rect x="820" y="130" width="240" height="330" rx="14" fill="#141417" stroke="rgba(255,255,255,0.16)" stroke-width="2" transform="rotate(-3 940 295)"/>
+  <g transform="rotate(6 960 290)">
+    <rect x="845" y="120" width="240" height="330" rx="14" fill="#EDEDEF"/>
+    <path d="M915 285 l38 38 l72 -84" fill="none" stroke="#0F0F11" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="870" y="150" width="86" height="34" rx="6" fill="none" stroke="#0F0F11" stroke-width="3" transform="rotate(-8 913 167)"/>
+    <text x="882" y="174" transform="rotate(-8 913 167)" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-weight="700" font-size="16" fill="#0F0F11" letter-spacing="2">KEEP</text>
+  </g>
+  <!-- wordmark + lines (same text content as prior og) -->
+  <text x="90" y="270" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-weight="600" font-size="78" fill="#EDEDEF" letter-spacing="2">RIAH SWIPE</text>
+  <text x="92" y="340" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="30" fill="#9A9AA2">Swipe-review board for AI-generated work.</text>
+  <text x="92" y="392" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="30" fill="#9A9AA2">Open source. MIT. MCP-ready.</text>
+</svg>

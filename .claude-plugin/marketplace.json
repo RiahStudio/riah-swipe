@@ -1,0 +1,11 @@
+{
+  "name": "riah-swipe",
+  "owner": { "name": "Riah Harris" },
+  "plugins": [
+    {
+      "name": "riah-swipe",
+      "source": "./",
+      "description": "Swipe-board review tools (MCP server + skill) for AI-generated cards and images."
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "riah-swipe",
+  "version": "1.0.0",
+  "description": "Review AI-generated cards and images on a swipe board: browse decks, walk cards, record keep / revise / discard verdicts.",
+  "homepage": "https://github.com/RiahStudio/riah-swipe",
+  "repository": "https://github.com/RiahStudio/riah-swipe",
+  "author": { "name": "Riah Harris", "url": "https://riahstudio.com" },
+  "license": "MIT",
+  "keywords": ["swipe", "review", "mcp", "images"]
+}

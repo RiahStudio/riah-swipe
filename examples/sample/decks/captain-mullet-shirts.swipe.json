@@ -1,0 +1,44 @@
+{
+  "decks": [
+    {
+      "id": "captain-mullet-shirts",
+      "name": "Captain Mullet — shirt designs",
+      "source": "Riah Studio",
+      "returnTo": "Riah Studio",
+      "kind": "image",
+      "rev": 1,
+      "accent": "#ff7a59",
+      "note": "Three shirt designs from the Captain Mullet merch drop. Keep the ones you'd print.",
+      "selectingFor": "the shirts to print"
+    }
+  ],
+  "cards": [
+    {
+      "id": "cm-shirt-cardio",
+      "deckId": "captain-mullet-shirts",
+      "title": "“Cardio Is For Cowards”",
+      "kind": "image",
+      "media": "decks/captain-mullet-shirts/cardio.webp",
+      "tag": "design 1 of 3",
+      "preview": "Captain Mullet shirt design. Swipe right to keep, left to discard, up to send back with a note."
+    },
+    {
+      "id": "cm-shirt-calves",
+      "deckId": "captain-mullet-shirts",
+      "title": "“Calves Are A Myth”",
+      "kind": "image",
+      "media": "decks/captain-mullet-shirts/calves.webp",
+      "tag": "design 2 of 3",
+      "preview": "Captain Mullet shirt design. Swipe right to keep, left to discard, up to send back with a note."
+    },
+    {
+      "id": "cm-shirt-power",
+      "deckId": "captain-mullet-shirts",
+      "title": "“Mullet Power”",
+      "kind": "image",
+      "media": "decks/captain-mullet-shirts/power.webp",
+      "tag": "design 3 of 3",
+      "preview": "Captain Mullet shirt design. Swipe right to keep, left to discard, up to send back with a note."
+    }
+  ]
+}
