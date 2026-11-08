@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — Riah Swipe</title>
+  <meta name="description" content="Your Riah Swipe workspaces and projects.">
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="apple-touch-icon" href="./favicon-512.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="./shared.css">
+  <script src="./theme.js"></script>
+</head>
+<body class="panel-page">
+  <div class="wrap-narrow">
+    <nav class="nav" aria-label="Main">
+      <a class="nav-logo" href="./"><span class="riah-wordmark">Riah</span> <span class="product-name">Swipe</span></a>
+      <div class="nav-links">
+        <span class="nav-email" id="nav-email"></span>
+        <button type="button" class="theme-toggle" data-theme-toggle title="Toggle light / dark" aria-label="Toggle light / dark">◐</button>
+        <a href="#" id="logout">Log out</a>
+      </div>
+    </nav>
+
+    <main id="dash" hidden>
+      <h1 class="dash-title">Workspace — <span id="ws-name">…</span></h1>
+
+      <div class="dash">
+        <!-- Shown only until the first project exists. -->
+        <div class="dash-cta" id="setup-cta" hidden>
+          <div class="dash-cta-step">First step</div>
+          <h2 class="dash-cta-title">Create a project, then share its link</h2>
+          <p class="dash-cta-body">A project is one stream of work — a client, a show, a contest.
+            You get a link for it that anyone can send work through, without an account of their own.</p>
+          <button class="btn btn-primary btn-hero" id="cta-new-project" type="button">Create your first project</button>
+        </div>
+
+        <!-- The way into the product. Its absence is why signing in felt like a dead end. -->
+        <div class="dash-open-app" id="open-app" hidden>
+          <div style="flex:1;min-width:0">
+            <div class="dash-label">Your review queue</div>
+            <p class="dash-open-app-sub">Everything your team sends lands here to swipe.</p>
+          </div>
+          <a class="btn btn-primary btn-hero" href="./review">Open the app →</a>
+        </div>
+
+        <h2 class="dash-section-head" data-dash="settings-head">Settings</h2>
+
+
+        <!-- 3. Projects -->
+        <div data-dash="projects" class="dash-block is-flush">
+          <div class="dash-block-pad" style="padding-bottom:16px">
+            <div class="dash-row">
+              <div class="dash-label">Projects</div>
+              <button class="btn btn-primary" id="new-project-btn" type="button">+ New project</button>
+            </div>
+          </div>
+          <div class="project-list" id="project-list">
+            <div class="project-empty" id="project-empty">No projects yet. Create one, then share its link with whoever sends you work.</div>
+          </div>
+          <div class="form-status" id="project-status" aria-live="polite" style="padding:0 26px 12px"></div>
+        </div>
+
+        <!-- 4. Storage -->
+        <div data-dash="storage" class="dash-block">
+          <div class="dash-row" style="align-items:baseline">
+            <div class="dash-label">Workspace storage</div>
+            <div id="storage-label" style="font:400 11px var(--font-mono);color:var(--body)">— / 2.0 GB</div>
+          </div>
+          <div class="storage-meter" aria-hidden="true"><span id="storage-fill"></span></div>
+          <p style="font-size:12.5px;margin-top:10px;line-height:1.6">
+            Media clears 30 days after a deck is fully reviewed (you can change that per project); verdicts and notes are kept.
+          </p>
+        </div>
+
+        <!-- 5. Danger -->
+        <details data-dash="danger" class="dash-quiet">
+          <summary class="dash-quiet-summary">Close your account</summary>
+          <div class="dash-block danger-inner">
+          <div class="dash-row" style="align-items:flex-start">
+            <div style="flex:1;min-width:200px">
+              
+              <p style="margin-top:8px">Delete removes your account, your workspaces, projects, uploaded media and reset tokens immediately. This cannot be undone.</p>
+            </div>
+            <div class="danger-actions">
+              <input id="del-pass" class="danger-pass" type="password" placeholder="Password to delete" autocomplete="current-password">
+              <button class="btn btn-danger-outline" id="del-btn" type="button" title="Removes your account and everything in your workspaces immediately">Delete account</button>
+            </div>
+          </div>
+          <div class="form-status" id="del-status" aria-live="polite"></div>
+        </div>
+        </details>
+
+
+      </div>
+    </main>
+  </div>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const post = (p, b) => fetch(p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b || {}) });
+
+    function fmtBytes(n) {
+      if (!Number.isFinite(n) || n < 0) return '—';
+      if (n >= 1024 ** 3) return (n / 1024 ** 3).toFixed(1) + ' GB';
+      return (n / 1024 ** 2).toFixed(1) + ' MB';
+    }
+
+    let workspaceId = null;
+
+
+    /* Draws the submit link as a QR code so someone can join by pointing a phone at a
+       laptop screen instead of retyping a long URL with a token in it.
+
+       Generated HERE, in the browser, on purpose. The link contains a secret submitter
+       token, and the whole reason it lives in the URL fragment is that no server ever
+       sees it — asking our own server (or worse, a hosted QR service) to render the
+       image would hand over the exact secret the fragment exists to protect.
+
+       The encoder is loaded lazily and its failure is swallowed: the copyable link is
+       the real deliverable and must never break because a nice-to-have didn't load. */
+    let qrLib = null;
+    async function drawSubmitQr(box, url) {
+      const wrap = box.querySelector('.submit-link-qr');
+      if (!wrap) return;
+      try {
+        const base = location.origin + location.pathname.replace(/\/dashboard\/?$/, '');
+        if (!qrLib) qrLib = await import(base + '/qr.js');
+        wrap.querySelector('.submit-link-qr-code').innerHTML = qrLib.qrSvg(url, {
+          scale: 4, level: 'M', quiet: 3,
+          dark: '#0F0F11', light: '#FFFFFF',
+          title: 'Submit link',
+        });
+        wrap.hidden = false;
+      } catch {
+        wrap.hidden = true;
+      }
+    }
+
+    /* Issues a one-off submitter token and builds the link to hand out.
+       The token goes in the URL FRAGMENT (#), never the query string: fragments are
+       never sent to a server, so it stays out of access logs and out of the Referer
+       header if the submitter clicks anything on the page. */
+    async function makeSubmitLink(projectId, row) {
+      const box = row.querySelector('.submit-link-box');
+      const btn = row.querySelector('.submit-link-btn');
+      btn.disabled = true;
+      btn.textContent = 'Making a link…';
+      try {
+        const res = await post('./api/projects/' + encodeURIComponent(projectId) + '/tokens', { label: 'submit link' });
+        const out = await res.json();
+        if (!res.ok || !out.ok) throw new Error(out.error || 'could not create a link');
+        const base = location.origin + location.pathname.replace(/\/dashboard\/?$/, '');
+        const url = base + '/submit#p=' + encodeURIComponent(projectId) + '&t=' + encodeURIComponent(out.token);
+        box.hidden = false;
+        box.querySelector('input').value = url;
+        btn.textContent = '+ Another link';
+        drawSubmitQr(box, url);
+      } catch (err) {
+        box.hidden = false;
+        box.querySelector('input').value = '';
+        box.querySelector('.submit-link-note').textContent = err.message || 'Could not create a link.';
+        btn.textContent = 'Try again';
+      }
+      btn.disabled = false;
+    }
+
+    /* The row markup, shared by freshly-created and already-existing projects so the
+       two paths cannot drift apart. */
+    function projectRow(name, meta, projectId) {
+      const row = document.createElement('div');
+      row.className = 'project-row';
+      row.innerHTML =
+        '<div style="flex:1;min-width:0">' +
+          '<div class="project-row-name"></div>' +
+          '<div class="project-row-meta"></div>' +
+          '<div class="submit-link-box" hidden>' +
+            '<input type="text" readonly onclick="this.select()" aria-label="Submit link">' +
+            '<button class="btn btn-ghost submit-link-copy" type="button">Copy</button>' +
+            '<p class="submit-link-note">Anyone with this link can send work in. No account needed.</p>' +
+            '<div class="submit-link-qr" hidden>' +
+              '<div class="submit-link-qr-code"></div>' +
+              '<p class="submit-link-qr-note">Or let them point a phone at this.</p>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<button class="btn btn-primary submit-link-btn" type="button">Get submit link</button>';
+      row.querySelector('.project-row-name').textContent = name;
+      row.querySelector('.project-row-meta').textContent = meta;
+      const btn = row.querySelector('.submit-link-btn');
+      if (projectId) {
+        btn.addEventListener('click', () => makeSubmitLink(projectId, row));
+      } else {
+        btn.disabled = true;
+        btn.title = 'Reload the page to generate a link for this project';
+      }
+      row.querySelector('.submit-link-copy').addEventListener('click', async (e) => {
+        const input = row.querySelector('.submit-link-box input');
+        try { await navigator.clipboard.writeText(input.value); e.target.textContent = 'Copied'; }
+        catch { input.select(); e.target.textContent = 'Press Ctrl+C'; }
+        setTimeout(() => { e.target.textContent = 'Copy'; }, 1800);
+      });
+      return row;
+    }
+
+    function renderProjects(workspaces) {
+      const list = $('project-list');
+      const empty = $('project-empty');
+      list.querySelectorAll('.project-row').forEach((el) => el.remove());
+      const rows = [];
+      let used = 0, quota = 2 * 1024 ** 3;
+      if (workspaces && workspaces.length) {
+        workspaceId = workspaces[0].id;
+        $('ws-name').textContent = workspaces[0].name || 'Workspace';
+        used = workspaces.reduce((s, w) => s + (Number(w.bytesUsed) || 0), 0);
+        quota = Number(workspaces[0].quotaBytes) || quota;
+        for (const ws of workspaces) {
+          for (const p of (ws.projects || [])) {
+            rows.push({ id: p.id, name: p.name, meta: (ws.name || 'Workspace').toUpperCase(), pending: 0 });
+          }
+        }
+      }
+      // Guide a new customer; give a returning one the door into the app.
+      const setupCta = document.getElementById('setup-cta');
+      const openApp = document.getElementById('open-app');
+      if (setupCta) setupCta.hidden = rows.length > 0;
+      if (openApp) openApp.hidden = rows.length === 0;
+      if (!rows.length) {
+        if (empty) empty.hidden = false;
+      } else {
+        if (empty) empty.hidden = true;
+        for (const p of rows) {
+          list.appendChild(projectRow(p.name, p.meta, p.id));
+        }
+      }
+      const usedLabel = fmtBytes(used);
+      const quotaLabel = fmtBytes(quota);
+      $('storage-label').textContent = usedLabel + ' / ' + quotaLabel;
+      const pct = quota > 0 ? Math.min(100, Math.round((used / quota) * 100)) : 0;
+      $('storage-fill').style.width = pct + '%';
+    }
+
+    async function load() {
+      const res = await fetch('./api/me');
+      if (res.status === 401) { location.href = './login'; return; }
+      const me = await res.json();
+      $('dash').hidden = false;
+
+      $('nav-email').textContent = (me.email || '').toUpperCase();
+      if (!$('ws-name').dataset.locked) {
+        const local = (me.email || '').split('@')[0] || 'Workspace';
+        $('ws-name').textContent = local;
+      }
+
+      // Owner workspaces + projects. Do NOT use /api/projects here — that list is
+      // submitter-scoped, and the person who creates a project is a reviewer, so a
+      // refresh used to wipe the dashboard even though the project was saved.
+      try {
+        const pr = await fetch('./api/workspaces', { cache: 'no-store' });
+        const data = pr.ok ? await pr.json().catch(() => ({})) : {};
+        const spaces = data.workspaces || [];
+        if (spaces.length) $('ws-name').dataset.locked = '1';
+        renderProjects(spaces);
+      } catch { /* solo accounts stay on empty shells */ }
+    }
+
+    const ctaBtn = document.getElementById('cta-new-project');
+    if (ctaBtn) ctaBtn.addEventListener('click', () => $('new-project-btn').click());
+
+    $('new-project-btn').addEventListener('click', async () => {
+      const name = prompt('Project name');
+      if (!name || !name.trim()) return;
+      $('project-status').textContent = 'Creating…';
+      $('project-status').className = 'form-status';
+      try {
+        if (!workspaceId) {
+          const wsName = prompt('Workspace name', name.trim()) || name.trim();
+          const wsRes = await post('./api/workspaces', { name: wsName.trim() });
+          const wsOut = await wsRes.json();
+          if (!wsRes.ok || !wsOut.ok) {
+            $('project-status').textContent = wsOut.error || 'Could not create workspace.';
+            return;
+          }
+          workspaceId = wsOut.workspace && wsOut.workspace.id;
+          $('ws-name').textContent = wsOut.workspace.name || wsName.trim();
+          $('ws-name').dataset.locked = '1';
+        }
+        const res = await post('./api/workspaces/' + encodeURIComponent(workspaceId) + '/projects', { name: name.trim() });
+        const out = await res.json();
+        if (res.ok && out.ok) {
+          const empty = $('project-empty');
+          if (empty) empty.hidden = true;
+          const setupCta = document.getElementById('setup-cta');
+          const openApp = document.getElementById('open-app');
+          if (setupCta) setupCta.hidden = true;
+          if (openApp) openApp.hidden = false;
+          const row = projectRow(out.project.name || name.trim(), 'YOU REVIEW', out.project.id);
+          $('project-list').appendChild(row);
+          // Don't make them hunt for the next click — mint the submit link now.
+          await makeSubmitLink(out.project.id, row);
+          $('project-status').textContent = 'Project ready — copy the link below and send it to whoever drops work in.';
+          $('project-status').className = 'form-status ok';
+        } else {
+          $('project-status').textContent = out.error || 'Could not create project.';
+        }
+      } catch {
+        $('project-status').textContent = 'Network hiccup — try again.';
+      }
+    });
+
+    $('del-btn').addEventListener('click', async () => {
+      if (!confirm('Delete your account? This removes your workspaces, projects and uploaded files, and cannot be undone.')) return;
+      $('del-status').textContent = 'Deleting…';
+      const out = await (await post('./api/delete-account', { password: $('del-pass').value })).json();
+      if (out.ok) { location.href = './'; return; }
+      $('del-status').textContent = out.error || 'Could not delete.';
+    });
+
+    $('logout').addEventListener('click', async (e) => {
+      e.preventDefault();
+      await post('./api/logout');
+      location.href = './';
+    });
+
+    load().catch(() => { location.href = './login'; });
+  </script>
+</body>
+</html>

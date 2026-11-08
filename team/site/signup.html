@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create your account — Riah Swipe</title>
+  <meta name="description" content="Create an account on your team's Riah Swipe server.">
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="apple-touch-icon" href="./favicon-512.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="./shared.css">
+  <script src="./theme.js"></script>
+</head>
+<body class="panel-page">
+  <div class="wrap">
+    <nav class="nav" aria-label="Main">
+      <a class="nav-logo" href="./"><span class="riah-wordmark">Riah</span> <span class="product-name">Swipe</span></a>
+      <div class="nav-links">
+        <a href="./docs">Docs</a>
+        <button type="button" class="theme-toggle" data-theme-toggle title="Toggle light / dark" aria-label="Toggle light / dark">◐</button>
+      </div>
+    </nav>
+  </div>
+  <main class="panel-main">
+    <div class="panel">
+      <div class="auth-tabs" role="tablist">
+        <a class="auth-tab is-active" href="./signup" role="tab" aria-selected="true">Sign up</a>
+        <a class="auth-tab" href="./login" role="tab" aria-selected="false">Log in</a>
+      </div>
+      <div class="panel-body">
+        <h1>Create your account</h1>
+        <div class="gauth" id="gauth" hidden>
+          <a class="btn btn-google" href="./api/auth/google">
+            <svg class="g-mark" viewBox="0 0 18 18" aria-hidden="true" focusable="false">
+              <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/>
+              <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/>
+              <path fill="#FBBC05" d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33z"/>
+              <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.9 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/>
+            </svg>
+            <span>Continue with Google</span>
+          </a>
+          <div class="gauth-or"><span>or</span></div>
+        </div>
+
+        <p class="sub">Review decks together with your team.</p>
+        <form id="f">
+          <div class="field">
+            <label for="email">Email</label>
+            <input id="email" type="email" autocomplete="email" required placeholder="you@example.com">
+          </div>
+          <div class="field">
+            <label for="password">Password</label>
+            <input id="password" type="password" autocomplete="new-password" minlength="10" required placeholder="••••••••••••">
+          </div>
+          <div class="field">
+            <label for="workspace">Workspace name</label>
+            <input id="workspace" type="text" autocomplete="organization" placeholder="e.g. My team">
+          </div>
+          <div class="form-status" id="status" aria-live="polite"></div>
+          <button class="btn btn-primary btn-block" type="submit">Create workspace →</button>
+        </form>
+      </div>
+    </div>
+  </main>
+  <script>
+    fetch('./api/auth/google/available').then(r=>r.json()).then(d=>{
+      if (d && d.google) document.getElementById('gauth').hidden = false;
+    }).catch(()=>{});
+
+    const f = document.getElementById('f'), status = document.getElementById('status');
+    const googleMsg = {
+      expired: 'Google sign-in timed out — click Continue with Google again.',
+      cancelled: 'Google sign-in was cancelled.',
+      failed: 'Google sign-in did not finish — try Continue with Google again.',
+      unavailable: 'Google sign-in is not available right now.',
+      slow_down: 'Too many Google sign-in tries — wait a minute and try again.',
+    };
+    const g = new URLSearchParams(location.search).get('google');
+    if (g && googleMsg[g]) {
+      status.textContent = googleMsg[g];
+      status.className = 'form-status';
+    }
+
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      status.textContent = 'Creating…'; status.className = 'form-status';
+      try {
+        const res = await fetch('./api/signup', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: document.getElementById('email').value,
+            password: document.getElementById('password').value,
+          }),
+        });
+        const out = await res.json();
+        if (res.ok && out.ok) {
+          const name = (document.getElementById('workspace').value || '').trim();
+          if (name) {
+            try {
+              await fetch('./api/workspaces', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name }),
+              });
+            } catch { /* non-blocking — account already created */ }
+          }
+          location.href = './review';
+          return;
+        }
+        status.textContent = out.error || 'Something went wrong — try again.';
+      } catch { status.textContent = 'Network hiccup — try again.'; }
+    });
+  </script>
+</body>
+</html>

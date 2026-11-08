@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Submit work — Riah Swipe</title>
+  <meta name="description" content="Drop your work in for review.">
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="apple-touch-icon" href="./favicon-512.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="./shared.css">
+  <script src="./theme.js"></script>
+</head>
+<body class="panel-page">
+  <div class="wrap">
+    <nav class="nav" aria-label="Main">
+      <a class="nav-logo" href="./"><span class="riah-wordmark">Riah</span> <span class="product-name">Swipe</span></a>
+      <div class="nav-links">
+        <button type="button" class="theme-toggle" data-theme-toggle title="Toggle light / dark" aria-label="Toggle light / dark">◐</button>
+      </div>
+    </nav>
+  </div>
+
+  <main class="panel-main">
+    <div class="panel">
+      <div class="panel-body">
+        <h1>Send work for review</h1>
+        <p class="sub" id="intro">Drop your files in, give the batch a name, and it lands in the reviewer's queue.</p>
+
+        <div id="gate" hidden>
+          <p class="form-status err" id="gate-msg">This link is missing its access code. Ask whoever sent it for the full link.</p>
+        </div>
+
+        <!-- novalidate: the browser's own bubble fires BEFORE the submit event, so with
+             `required` on the name nothing would be announced. All checks are in JS now, in reading order,
+             and every one of them speaks through the same aria-live region. -->
+        <form id="f" hidden novalidate>
+          <div class="field">
+            <label for="deckName">What is this batch?</label>
+            <input id="deckName" type="text" required maxlength="120" placeholder="e.g. Poster — round 2">
+          </div>
+
+          <div class="field">
+            <label for="files">Your files</label>
+            <input id="files" type="file" multiple accept="image/*,video/*,audio/*">
+            <p class="field-hint" id="picked">Images, video or audio. One card per file.</p>
+          </div>
+
+          <div class="field">
+            <label for="note">Anything the reviewer should know? <span class="opt">(optional)</span></label>
+            <input id="note" type="text" maxlength="200" placeholder="e.g. warmer palette applied">
+          </div>
+
+          
+          <div class="form-status" id="status" aria-live="polite"></div>
+          <button class="btn btn-primary btn-block" type="submit" id="go">Send for review →</button>
+        </form>
+
+        <div id="done" hidden>
+          <p class="form-status ok">Sent. The reviewer will see it in their queue.</p>
+          <p class="sub">You can close this page, or <a href="#" id="again">send another batch</a>.</p>
+        </div>
+      </div>
+      <div class="auth-footer">
+        Submitting is free and needs no account.<br>
+        Your files are only visible to the people reviewing this project.
+      </div>
+          </div>
+  </main>
+
+<script>
+/* The access code travels in the URL FRAGMENT, never the query string: fragments
+   are not sent to the server, so the token stays out of access logs, out of the
+   Referer header on any outbound link, and out of anything that proxies this page. */
+(function () {
+  const params = new URLSearchParams(location.hash.replace(/^#/, ''));
+  const projectId = params.get('p') || '';
+  const token = params.get('t') || '';
+
+  const form = document.getElementById('f');
+  const gate = document.getElementById('gate');
+  const statusEl = document.getElementById('status');
+  const filesEl = document.getElementById('files');
+  const picked = document.getElementById('picked');
+  const doneEl = document.getElementById('done');
+  const go = document.getElementById('go');
+
+  if (!projectId || !token) { gate.hidden = false; return; }
+  form.hidden = false;
+
+  filesEl.addEventListener('change', () => {
+    const n = filesEl.files.length;
+    picked.textContent = n ? `${n} file${n === 1 ? '' : 's'} ready — one card each.`
+                           : 'Images, video or audio. One card per file.';
+  });
+
+  const kindFor = (type) => type.startsWith('video/') ? 'video'
+                          : type.startsWith('audio/') ? 'audio'
+                          : type.startsWith('image/') ? 'image' : 'text';
+
+  const say = (msg, cls) => { statusEl.className = 'form-status' + (cls ? ' ' + cls : ''); statusEl.textContent = msg; };
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    // Checked in the order the fields appear, so the message always points at the first
+    // thing actually wrong rather than jumping down the page.
+    const deckEl = document.getElementById('deckName');
+    if (!deckEl.value.trim()) { say('Give this batch a name first.', 'err'); deckEl.focus(); return; }
+    const files = [...filesEl.files];
+    if (!files.length) { say('Pick at least one file first.', 'err'); filesEl.focus(); return; }
+
+    go.disabled = true;
+    const auth = { Authorization: 'Bearer ' + token };
+    // A source id unique to this submission, so re-sending never collides with an
+    // earlier batch in the same project (the API rejects a duplicate revision).
+    const sourceId = 'sub-' + Date.now().toString(36);
+    const name = document.getElementById('deckName').value.trim() || 'Untitled batch';
+    const note = document.getElementById('note').value.trim();
+
+    const cards = files.map((file, i) => ({
+      id: `${sourceId}-c${i + 1}`,
+      deckId: sourceId,
+      title: file.name.replace(/\.[^.]+$/, ''),
+      kind: kindFor(file.type),
+      media: file.name,
+    }));
+
+    try {
+      say('Creating the batch…');
+      const created = await fetch(`./api/projects/${encodeURIComponent(projectId)}/decks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...auth },
+        body: JSON.stringify({
+          schema: 'riah-swipe.deck/1',
+          decks: [{ id: sourceId, name, kind: cards[0].kind, note, rev: 0 }],
+          cards,
+        }),
+      }).then((r) => r.json());
+      if (!created.ok) throw new Error(created.detail?.errors?.[0] || created.error || 'could not create the batch');
+
+      const deckId = created.decks[0].id;
+
+      for (let i = 0; i < files.length; i++) {
+        say(`Uploading ${i + 1} of ${files.length}…`);
+        const res = await fetch(`./api/decks/${encodeURIComponent(deckId)}/cards/${encodeURIComponent(cards[i].id)}/media`, {
+          method: 'PUT',
+          headers: { 'Content-Type': files[i].type || 'application/octet-stream', ...auth },
+          body: files[i],
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error === 'quota_exceeded'
+            ? 'The workspace is out of storage — tell the reviewer.'
+            : `Upload failed on "${files[i].name}".`);
+        }
+      }
+
+      say('Publishing…');
+      // Publish LAST, once every file is up. A deck published early can be opened
+      // with missing media, which has produced blank cards before.
+      const pub = await fetch(`./api/decks/${encodeURIComponent(deckId)}/publish`, {
+        method: 'POST', headers: auth,
+      }).then((r) => r.json());
+      if (!pub.ok) throw new Error(pub.error || 'could not publish');
+
+      form.hidden = true;
+      doneEl.hidden = false;
+    } catch (err) {
+      say(err.message || 'Something went wrong — try again.', 'err');
+      go.disabled = false;
+    }
+  });
+
+  document.getElementById('again').addEventListener('click', (e) => {
+    e.preventDefault();
+    form.reset(); picked.textContent = 'Images, video or audio. One card per file.';
+    say(''); go.disabled = false; doneEl.hidden = true; form.hidden = false;
+  });
+})();
+</script>
+</body>
+</html>

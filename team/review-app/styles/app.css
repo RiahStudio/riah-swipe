@@ -1,0 +1,1935 @@
+/* styles/app.css — Riah Swipe (team server)
+ * Ink/Mono design system (stage 3). Dark default + token-flipped light theme.
+ * Space Grotesk + Space Mono. Zero-dep. Class names are a stable contract with
+ * src/swipe-view.js and src/app.js — restyle only, do not rename.
+ */
+
+/* ── Tokens (dark default) — mirror server/site/shared.css ─────────────── */
+:root {
+  --bg: #0F0F11;
+  --bg-raised: #141417;
+  /* Plate behind the verdict chrome when it sits over a card. Near-opaque on
+     purpose — it lands on unpredictable art, so it can't be a light wash. */
+  --rs-chrome-plate: rgba(10, 10, 12, 0.94);
+  --ink: #EDEDEF;
+  --body: #9A9AA2;
+  --dim: #77777F;
+  --rule: rgba(255, 255, 255, 0.12);
+  --rule-strong: rgba(255, 255, 255, 0.16);
+  --rule-hard: #EDEDEF;
+  --keep: #3FCF7F;
+  --revise: #E9BA45;
+  --discard: #F26D5B;
+  --keep-soft: rgba(63, 207, 127, 0.16);
+  --revise-soft: rgba(233, 186, 69, 0.15);
+  --discard-soft: rgba(242, 109, 91, 0.15);
+  --keep-line: rgba(63, 207, 127, 0.4);
+  --revise-line: rgba(233, 186, 69, 0.4);
+  --discard-line: rgba(242, 109, 91, 0.32);
+  --shadow: 0 3px 12px rgba(0, 0, 0, 0.4);
+  --overlay-stamp: rgba(15, 15, 17, 0.7);
+  --riah-brand: #FF5CA8;
+
+  --font-brand: 'Instrument Serif', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --font-sans: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --radius-chip: 5px;
+  --radius: 8px;
+  --radius-code: 12px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* Legacy --rs-* aliases — JS still sets --rs-accent / --rs-deck-accent */
+  --rs-bg:           var(--bg);
+  --rs-bg-subtle:    var(--bg-raised);
+  --rs-bg-card:      var(--bg-raised);
+  --rs-bg-card-2:    var(--bg-raised);
+  --rs-text:         var(--body);
+  --rs-text-bright:  var(--ink);
+  --rs-text-body:    var(--body);
+  --rs-text-dim:     var(--dim);
+  --rs-accent:       var(--ink);
+  --rs-accent-light: var(--ink);
+  --rs-accent-soft:  rgba(237, 237, 239, 0.08);
+  --rs-keep:         var(--keep);
+  --rs-revise:       var(--revise);
+  --rs-discard:      var(--discard);
+  --rs-warn:         var(--revise);
+  --rs-border:       var(--rule);
+  --rs-border-light: var(--rule-strong);
+  --rs-radius:       var(--radius);
+  --rs-radius-lg:    var(--radius-lg);
+  --rs-font-display: var(--font-sans);
+  --rs-font-body:    var(--font-sans);
+}
+
+[data-theme="light"] {
+  --bg: #FFFFFF;
+  --bg-raised: #FAFAFA;
+  --rs-chrome-plate: rgba(255, 255, 255, 0.96);
+  --ink: #111111;
+  --body: #555555;
+  --dim: #888888;
+  --rule: rgba(0, 0, 0, 0.14);
+  --rule-strong: rgba(0, 0, 0, 0.25);
+  --rule-hard: #111111;
+  --keep: #158A46;
+  --revise: #B58004;
+  --discard: #D42B2B;
+  --keep-soft: rgba(21, 138, 70, 0.11);
+  --revise-soft: rgba(181, 128, 4, 0.12);
+  --discard-soft: rgba(212, 43, 43, 0.09);
+  --keep-line: rgba(21, 138, 70, 0.35);
+  --revise-line: rgba(181, 128, 4, 0.35);
+  --discard-line: rgba(212, 43, 43, 0.32);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 5px 16px rgba(0, 0, 0, 0.08);
+  --overlay-stamp: rgba(255, 255, 255, 0.85);
+  --rs-accent-soft: rgba(17, 17, 17, 0.06);
+}
+
+/* ── Reset / page shell ─────────────────────────────────────────────────── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+html { color-scheme: dark; }
+[data-theme="light"] { color-scheme: light; }
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg);
+  /* Faint 90px hairline grid behind the column */
+  background-image:
+    repeating-linear-gradient(90deg, transparent 0 89px, rgba(128, 128, 128, 0.05) 89px 90px),
+    repeating-linear-gradient(0deg, transparent 0 89px, rgba(128, 128, 128, 0.05) 89px 90px);
+  color: var(--body);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+html:has(#rs-surface:not([hidden]) .rs-card-kind-image),
+html:has(#rs-surface:not([hidden]) .rs-card-kind-video),
+body:has(#rs-surface:not([hidden]) .rs-card-kind-image),
+body:has(#rs-surface:not([hidden]) .rs-card-kind-video) {
+  height: auto;
+  min-height: 100%;
+  overflow: auto;
+  overscroll-behavior: auto;
+}
+::selection { background: var(--ink); color: var(--bg); }
+button { font-family: inherit; cursor: pointer; }
+a { color: var(--ink); text-decoration: none; }
+a:hover { color: var(--dim); }
+img, svg { max-width: 100%; }
+
+/* `hidden` must always win, even against display rules below. */
+[hidden] { display: none !important; }
+
+/* ── ReviewGate desktop margins (decorative only) ───────────────────────── */
+.rs-regmarks {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+.rs-regmark {
+  position: fixed;
+  width: 26px;
+  height: 26px;
+  pointer-events: none;
+  z-index: 0;
+}
+.rs-regmark-tl {
+  top: 20px; left: 20px;
+  border-top: 1px solid var(--rule-strong);
+  border-left: 1px solid var(--rule-strong);
+}
+.rs-regmark-tr {
+  top: 20px; right: 20px;
+  border-top: 1px solid var(--rule-strong);
+  border-right: 1px solid var(--rule-strong);
+}
+.rs-regmark-bl {
+  bottom: 20px; left: 20px;
+  border-bottom: 1px solid var(--rule-strong);
+  border-left: 1px solid var(--rule-strong);
+}
+.rs-regmark-br {
+  bottom: 20px; right: 20px;
+  border-bottom: 1px solid var(--rule-strong);
+  border-right: 1px solid var(--rule-strong);
+}
+.rs-regmark-cap {
+  position: fixed;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--dim);
+  opacity: 0.7;
+  pointer-events: none;
+  z-index: 0;
+  white-space: nowrap;
+}
+.rs-regmark-cap-tl { top: 24px; left: 56px; }
+.rs-regmark-cap-br { bottom: 24px; right: 56px; }
+
+/* ── App column — mobile-first 520px, side rails + soft outer glow ─────── */
+.rs-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  background: var(--bg);
+  border-left: 1px solid var(--rule);
+  border-right: 1px solid var(--rule);
+  box-shadow: 0 0 80px rgba(0, 0, 0, 0.25);
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+}
+
+/* Swiping: the column fills the window so the card can actually get bigger.
+   Picker stays the 520 phone column. */
+.rs-app:has(#rs-surface:not([hidden])) {
+  max-width: none;
+  width: 100%;
+  border-left: none;
+  border-right: none;
+  box-shadow: none;
+}
+.rs-app:has(#rs-surface:not([hidden]) .rs-card-kind-image),
+.rs-app:has(#rs-surface:not([hidden]) .rs-card-kind-video) {
+  height: auto;
+  min-height: 100dvh;
+  min-width: 100%;
+  width: max(100%, max-content);
+  overflow: visible;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.rs-header {
+  flex: none;
+  padding: 18px 20px 0;
+  margin: 0 0 6px;
+  /* The header must outrank the card stack. Image/video cards scale with
+     `transform: scale(--rs-card-size)`, and a transform paints AND hit-tests
+     outside its layout box while the stack is `overflow: visible` by design —
+     so a card sized past its frame covered the header controls and swallowed
+     their clicks. VERIFIED in-browser 2026-07-20 on the internal twin: at card
+     size 1.6, elementFromPoint over the theme toggle and the settings gear
+     returned the card's IMG. Cards top out at 10, note bar and verdicts at 30,
+     review subheader at 40; the header sits above all of them. */
+  position: relative;
+  z-index: 50;
+}
+.rs-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--rule-hard);
+}
+.rs-logo {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--ink);
+  line-height: 1;
+  white-space: nowrap;
+}
+.rs-logo .riah-brand {
+  font-family: var(--font-brand);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--riah-brand);
+}
+.rs-logo .riah-product {
+  font-family: var(--font-brand);
+  font-style: normal;
+  font-weight: 400;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--ink);
+}
+.rs-logo em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--ink);
+}
+.rs-header-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rs-tagline {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--dim);
+  white-space: nowrap;
+  margin-right: 8px;
+}
+
+/* 24px outlined circles — theme, settings, phone */
+.rs-icon-btn,
+.rs-phone-btn,
+.theme-toggle,
+.rs-settings-btn {
+  background: none;
+  border: 1px solid var(--rule);
+  color: var(--dim);
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: var(--radius-pill);
+  line-height: 1;
+  flex: 0 0 auto;
+  text-decoration: none;
+  transition: border-color 0.15s, color 0.15s;
+}
+.rs-icon-btn:hover,
+.rs-phone-btn:hover,
+.theme-toggle:hover,
+.rs-settings-btn:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.rs-phone-btn {
+  font-size: 11px;
+}
+.rs-settings-btn svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
+/* Review second header row — back · deck name · counter (status floats in) */
+.rs-header-sub {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 14px;
+  min-height: 0;
+  position: relative;
+}
+.rs-header-sub:empty {
+  display: none;
+  padding: 0;
+}
+.rs-back {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: none;
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  font-size: 15px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  min-width: 36px;
+  min-height: 36px;
+  margin: 0;
+  transition: border-color 0.15s;
+}
+.rs-back:hover { border-color: var(--ink); }
+.rs-back:active { background: var(--rs-accent-soft); }
+
+.rs-deck-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.rs-deck-head-name {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rs-deck-head-for {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-top: 0;
+}
+.rs-deck-head-for span {
+  color: var(--dim);
+}
+
+/* During review, pin the status counter into the header row (existing #rs-status) */
+.rs-app:has(#rs-surface:not([hidden])) .rs-status {
+  position: absolute;
+  top: 68px;
+  right: 20px;
+  left: auto;
+  width: auto;
+  max-width: 40%;
+  padding: 0;
+  min-height: 0;
+  text-align: right;
+  z-index: 2;
+  pointer-events: none;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.rs-app:has(#rs-surface:not([hidden])) .rs-header-sub {
+  padding-right: 3.5rem;
+}
+
+.rs-app:has(#rs-surface:not([hidden])) .rs-header {
+  margin-bottom: 0;
+}
+.rs-app:has(#rs-surface:not([hidden])) .rs-header-sub {
+  padding-top: 10px;
+  padding-bottom: 0;
+}
+.rs-header-sub .rs-back { order: 1; }
+.rs-header-sub .rs-card-size { order: 2; flex: 1 1 160px; max-width: 240px; }
+.rs-header-sub .rs-card-copy {
+  flex: 0 0 auto;
+  margin-left: auto;
+  order: 3;
+}
+.rs-header-sub:not(:has(.rs-card-copy:not([hidden]))) .rs-card-size {
+  margin-left: auto;
+}
+.rs-card-copy[hidden] { display: none !important; }
+
+/* ── State banner ─────────────────────────────────────────────── */
+.rs-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  margin: 0 20px 0.4rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  font-size: 0.8rem;
+  color: var(--body);
+}
+.rs-banner strong { color: var(--ink); }
+.rs-banner[data-tone="warn"]  { border-color: var(--revise-line); }
+.rs-banner[data-tone="error"] { border-color: var(--discard-line); }
+.rs-banner-btn {
+  flex: none;
+  background: var(--ink);
+  border: none;
+  color: var(--bg);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius);
+  min-height: 32px;
+  transition: opacity 0.15s;
+}
+.rs-banner-btn:hover { opacity: 0.85; }
+
+/* ── Surface host ───────────────────────────────────────────────────────── */
+.rs-surface { flex: 1; min-height: 0; }
+
+/* ── Picker (deck list) ─────────────────────────────────────────────────── */
+.rs-picker {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rs-picker-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  color: var(--body);
+  padding: 40px 20px;
+}
+.rs-picker-empty .rs-empty-title {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 18px;
+  color: var(--ink);
+}
+.rs-picker-empty .rs-empty-sub {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--body);
+  max-width: 30ch;
+}
+.rs-picker-empty .rs-empty-glyph {
+  display: none;
+}
+
+.rs-deck-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+.rs-deck-item {
+  --rs-deck-accent: var(--ink);
+  position: relative;
+}
+.rs-deck-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  background: var(--bg-raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 11px 14px;
+  color: var(--ink);
+  transition: border-color 0.15s, transform 0.1s;
+  min-height: 56px;
+  cursor: pointer;
+  position: relative;
+}
+.rs-deck-btn:hover {
+  border-color: var(--ink);
+  transform: translateY(-1px);
+}
+.rs-deck-btn:active {
+  transform: translateY(0);
+}
+.rs-deck-item-locked .rs-deck-btn { opacity: 0.55; }
+.rs-deck-lock { margin-left: auto; font-size: 0.8rem; }
+
+.rs-deck-row1 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  order: 0;
+  margin-bottom: 0;
+}
+.rs-deck-kind-pill {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--dim) !important;
+  border-color: var(--rule) !important;
+}
+.rs-deck-source {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  font-weight: 400;
+  margin-left: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}
+.rs-deck-name {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.25;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  order: 1;
+}
+.rs-deck-note {
+  font-size: 10.5px;
+  color: var(--body);
+  line-height: 1.4;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  order: 2;
+}
+.rs-deck-meter {
+  height: 2px;
+  width: 100%;
+  background: var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 4px 0 0;
+  order: 3;
+}
+.rs-deck-meter-fill {
+  height: 100%;
+  background: var(--ink);
+  transition: width 0.3s;
+}
+.rs-deck-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: var(--dim);
+  order: 4;
+  margin-top: 2px;
+  /* Keep remaining/tally on the right like the mock; meter already above */
+  position: absolute;
+  top: 11px;
+  right: 14px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  margin: 0;
+}
+.rs-deck-remaining {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.rs-deck-tally {
+  display: inline-flex;
+  gap: 7px;
+  align-items: baseline;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+}
+.rs-tally-keep    { color: var(--keep); }
+.rs-tally-revise  { color: var(--revise); }
+.rs-tally-discard { color: var(--discard); }
+.rs-tally-total   { display: none; }
+
+/* Room for absolute foot on the right */
+.rs-deck-btn {
+  padding-right: 7.5rem;
+}
+
+/* ── Swipe surface ──────────────────────────────────────────────────────── */
+.rs-swipe-root {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  padding: 6px 14px 0;
+  min-height: 0;
+}
+
+.rs-stack {
+  flex: 1;
+  position: relative;
+  display: block;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  min-height: 0;
+  padding: 0.4rem 0 0.8rem;
+}
+
+/* Note bar + action buttons always win the click over an animating card. */
+.rs-note,
+.rs-actions {
+  position: relative;
+  z-index: 30;
+  flex: 0 0 auto;
+}
+
+/* Verdict chrome hides BEHIND a big card, surfaces on approach. Mouse only — touch has no hover, so on a phone the chrome stays
+   in front at z-index 30 above and this whole block never applies. The lift is
+   driven by a pointer-position test in swipe-view.js, not `:hover`: where the
+   card overlaps the chrome the CARD is topmost and takes the hover, so the
+   chrome underneath would never fire. Top card sits at z-index 10. */
+@media (hover: hover) and (pointer: fine) {
+  .rs-swipe-root .rs-note,
+  .rs-swipe-root .rs-note-status,
+  .rs-swipe-root .rs-actions {
+    z-index: 5;
+    transition: background-color 0.18s ease, box-shadow 0.18s ease;
+  }
+  /* Reserve the lift footprint always. Padding used to toggle only when the
+     chrome rose, which resized the flex stack — a scaled-up image would bump
+     and shrink every time the pointer crossed the note/actions. Lift may only
+     change paint (z-index / plate), never layout. */
+  .rs-swipe-root .rs-note { padding: 10px 12px; }
+  .rs-swipe-root.rs-chrome-lifted .rs-note,
+  .rs-swipe-root.rs-chrome-lifted .rs-note-status,
+  .rs-swipe-root.rs-chrome-lifted .rs-actions {
+    z-index: 45;
+  }
+  /* Lifted, it lands on top of whatever the card happens to be — bright poster
+     art, white backgrounds, anything. Transparent chrome is unreadable there, so
+     it takes a solid dark plate while raised. */
+  .rs-swipe-root.rs-chrome-lifted .rs-note,
+  .rs-swipe-root.rs-chrome-lifted .rs-actions {
+    background-color: rgba(10, 10, 12, 0.94);
+    box-shadow: 0 0 0 1px var(--rule-strong), 0 8px 28px rgba(0, 0, 0, 0.5);
+    border-radius: var(--radius-lg);
+  }
+}
+
+/* Touch has no hover, so the chrome can never be "surfaced" by reaching for it —
+   it stays IN FRONT at z-index 30 (the base rule above) where it's always
+   tappable, and takes the same solid plate, because on a phone it permanently
+   sits over a large card and has the same legibility problem. This is the phone
+   answer to the hover trick. */
+@media not all and (hover: hover) {
+  .rs-swipe-root .rs-note,
+  .rs-swipe-root .rs-actions {
+    background-color: rgba(10, 10, 12, 0.94);
+    box-shadow: 0 0 0 1px var(--rule-strong), 0 8px 28px rgba(0, 0, 0, 0.5);
+    border-radius: var(--radius-lg);
+  }
+  .rs-swipe-root .rs-note { padding: 10px 12px; }
+}
+
+/* ── Card ───────────────────────────────────────────────────────────────── */
+.rs-card {
+  --rs-stack-offset: 0;
+  --rs-keep-opacity: 0;
+  --rs-discard-opacity: 0;
+
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  margin: 0 auto;
+  min-height: min(58vh, 420px);
+  padding: 1rem 1rem 0.9rem;
+  background: var(--bg);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  user-select: none;
+  touch-action: pan-y;
+  will-change: transform;
+
+  transform:
+    translateY(calc(var(--rs-stack-offset) * 12px))
+    scale(calc(1 - var(--rs-stack-offset) * 0.035));
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.32s;
+  z-index: calc(10 - var(--rs-stack-offset));
+  opacity: calc(1 - var(--rs-stack-offset) * 0.18);
+}
+
+.rs-card[data-offset="1"],
+.rs-card[data-offset="2"] {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  min-height: 0;
+}
+
+.rs-card-dragging { transition: none; cursor: grabbing; }
+.rs-card-exit     { transition: transform 0.22s ease-out, opacity 0.22s ease-out; opacity: 0; }
+
+.rs-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 2px 0 8px;
+}
+.rs-card-tag {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 400;
+  color: var(--dim);
+  padding: 4px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-pill);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.rs-card-title {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.25;
+  color: var(--ink);
+  font-weight: 500;
+  text-align: center;
+}
+.rs-card-preview {
+  flex: 0 0 auto;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: center;
+}
+/* Caption above media — mock: Grotesk 600 13px, no left accent bar */
+.rs-card-toptext {
+  flex: 0 0 auto;
+  margin: 0 0 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 0;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 600;
+  text-align: center;
+}
+.rs-card-foot {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--dim);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Verdict overlays — KEEP / CUT stamps while dragging */
+.rs-overlay {
+  position: absolute;
+  top: 34px;
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  border-radius: 6px;
+  border: 2px solid currentColor;
+  background: var(--overlay-stamp);
+  pointer-events: none;
+  transform: rotate(-6deg);
+}
+.rs-overlay-keep {
+  right: 10px;
+  color: var(--keep);
+  opacity: var(--rs-keep-opacity, 0);
+}
+.rs-overlay-discard {
+  left: 10px;
+  color: var(--discard);
+  opacity: var(--rs-discard-opacity, 0);
+  transform: rotate(6deg);
+}
+
+/* ── Empty state ────────────────────────────────────────────────────────── */
+/* `hidden` must beat the display rule below, or the attribute is a no-op. The panel is
+   `position: absolute; inset: 0`, so when it isn't really hidden it covers the whole
+   stack — it only looked right because the cards painted on top of it. There was an
+   override, but scoped to `.demo-surface` only, so everywhere else it was ignored. */
+.rs-empty[hidden] { display: none; }
+.rs-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  color: var(--dim);
+  text-align: center;
+  padding: 2rem;
+}
+.rs-empty-glyph {
+  font-family: var(--font-sans);
+  font-size: 3rem;
+  color: var(--ink);
+  opacity: 0.35;
+}
+.rs-empty-title { color: var(--ink); font-size: 1.1rem; font-weight: 500; }
+.rs-empty-sub   { font-size: 0.85rem; max-width: 280px; color: var(--body); }
+
+/* ── Action buttons — circular verdict cluster ──────────────────────────── */
+.rs-actions {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 22px;
+  padding: 14px 0 18px;
+}
+.rs-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-weight: 400;
+  font-size: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+  transition: transform 0.15s;
+  min-width: 0;
+}
+.rs-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.rs-btn:not(:disabled):hover { transform: none; }
+
+/* Circle face — SVG icons, grid-centered (no font glyphs / ::before hacks) */
+.rs-btn > span[aria-hidden="true"] {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  transition: background 0.2s, color 0.2s, border-color 0.2s, transform 0.15s;
+  box-shadow: var(--shadow);
+  line-height: 0;
+}
+.rs-btn > span[aria-hidden="true"] svg {
+  display: block;
+  flex-shrink: 0;
+}
+.rs-btn > span[aria-hidden="true"]::before {
+  content: none;
+}
+
+.rs-btn-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+/* UNDO — 40px outline, extra right margin, 7px top offset */
+.rs-undo {
+  margin-top: 7px;
+  margin-right: 12px;
+  gap: 14px;
+}
+.rs-undo > span[aria-hidden="true"] {
+  width: 40px;
+  height: 40px;
+  background: none;
+  border: 1px solid var(--rule);
+  box-shadow: none;
+  color: var(--dim);
+}
+.rs-undo:not(:disabled):hover > span[aria-hidden="true"] {
+  border-color: var(--ink);
+  color: var(--ink);
+  transform: none;
+}
+.rs-undo::after {
+  content: 'UNDO';
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  color: var(--dim);
+}
+
+/* NO — 54px discard soft */
+.rs-btn-discard > span[aria-hidden="true"] {
+  width: 54px;
+  height: 54px;
+  background: var(--discard-soft);
+  border: none;
+  color: var(--discard);
+}
+.rs-btn-discard:not(:disabled):hover > span[aria-hidden="true"] {
+  background: var(--discard);
+  color: #FFFFFF;
+  transform: translateY(-2px);
+}
+
+/* REVISE — 44px, 5px lower */
+.rs-btn-revise {
+  margin-top: 5px;
+  gap: 12px;
+}
+.rs-btn-revise > span[aria-hidden="true"] {
+  width: 44px;
+  height: 44px;
+  background: var(--revise-soft);
+  border: none;
+  color: var(--revise);
+}
+.rs-btn-revise:not(:disabled):hover > span[aria-hidden="true"] {
+  background: var(--revise);
+  color: #FFFFFF;
+  transform: translateY(-2px);
+}
+
+/* YES — 54px keep soft */
+.rs-btn-keep > span[aria-hidden="true"] {
+  width: 54px;
+  height: 54px;
+  background: var(--keep-soft);
+  border: none;
+  color: var(--keep);
+}
+.rs-btn-keep:not(:disabled):hover > span[aria-hidden="true"] {
+  background: var(--keep);
+  color: #FFFFFF;
+  transform: translateY(-2px);
+}
+
+/* ── Status line (picker bottom; review = header counter via :has above) ─ */
+.rs-status {
+  flex: none;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0 20px 18px;
+  color: var(--dim);
+  min-height: 12px;
+}
+.rs-status[data-tone="warn"]  { color: var(--revise); }
+.rs-status[data-tone="error"] { color: var(--discard); }
+
+/* ── Offline indicator ──────────────────────────────────────────────────── */
+.rs-offline .rs-logo::after {
+  content: "· offline";
+  margin-left: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.15em;
+  color: var(--revise);
+  text-transform: uppercase;
+  font-weight: 400;
+}
+
+/* ── Card body variants per kind ────────────────────────────────────────── */
+.rs-card-title-compact { font-size: 14px; line-height: 1.25; font-weight: 500; }
+.rs-card-preview-tight { font-size: 11px; line-height: 1.45; flex: 0 0 auto; color: var(--dim); }
+.rs-card-preview-bottom {
+  text-align: center;
+  font-size: 11px;
+  flex: 0 0 auto;
+  color: var(--dim);
+}
+
+/* Image + video media frame */
+.rs-card-media {
+  flex: 0 0 auto;
+  min-height: 120px;
+  border-radius: 0;
+  overflow: hidden;
+  background: var(--bg);
+  border: none;
+  position: relative;
+  display: block;
+}
+.rs-card-media img,
+.rs-card-media video {
+  width: 100%;
+  height: auto;
+  max-height: 72vh;
+  object-fit: contain;
+  display: block;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+/* Cards that carry post copy (e.g. a meme + its caption) show it ABOVE the image;
+   images with no caption stay bare edge-to-edge. */
+.rs-card-caption {
+  margin: 0 0 8px;
+  padding: 10px 14px;
+  background: var(--panel, #14171c);
+  border-bottom: 1px solid var(--line, #2a2f37);
+  color: var(--txt, #e8eaed);
+  font-size: 15px;
+  line-height: 1.45;
+  white-space: pre-line;
+  overflow-wrap: break-word;
+}
+@media (max-width: 560px) { .rs-card-caption { font-size: 13.5px; padding: 8px 11px; } }
+.rs-card-media-captioned img { max-height: 58vh; }
+.rs-card-media-missing img { opacity: 0.2; }
+.rs-card-media.rs-card-media-missing { min-height: 90px !important; }
+.rs-media-missing {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  z-index: 2;
+  transform: translateX(-50%);
+  max-width: calc(100% - 20px);
+  padding: 5px 8px;
+  border: 1px solid var(--revise-line);
+  border-radius: var(--radius-pill);
+  background: var(--overlay-stamp);
+  color: var(--revise);
+  font: 500 0.68rem/1.2 var(--font-mono);
+  text-align: center;
+  white-space: nowrap;
+}
+.rs-card-media-poster::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(0,0,0,0) 0%, rgba(0,0,0,0.45) 80%);
+  pointer-events: none;
+}
+.rs-card-media-poster .rs-play-glyph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0;
+  color: #fff;
+  pointer-events: none;
+  z-index: 1;
+}
+.rs-card-media-poster .rs-play-glyph::before {
+  content: '';
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  display: block;
+  position: absolute;
+}
+.rs-card-media-poster .rs-play-glyph::after {
+  content: '';
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 8px 0 8px 14px;
+  border-color: transparent transparent transparent #fff;
+  position: relative;
+  z-index: 1;
+  margin-left: 3px;
+}
+
+/* Script body — raised panel, mono, scrollable */
+.rs-card-script {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 16px 18px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--body);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.rs-card-kind-script .rs-card-script,
+.rs-card-kind-chapter .rs-card-script { touch-action: pan-y; }
+
+/* Line — single quote, big and centered */
+.rs-card-line-quote {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-family: var(--font-sans);
+  font-style: normal;
+  font-size: 1.35rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--ink);
+  padding: 0.4rem 0.2rem;
+  position: relative;
+}
+.rs-card-line-quote::before,
+.rs-card-line-quote::after { display: none; }
+
+/* ── Audio cards ────────────────────────────────────────────────────────── */
+.rs-card-audio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 28px 22px;
+  text-align: center;
+  flex: 1;
+  min-height: 360px;
+}
+.rs-audio-glyph {
+  font-size: 28px;
+  line-height: 1;
+  color: var(--ink);
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: none;
+  border: 1px solid var(--rule);
+}
+.rs-audio-line {
+  font-family: var(--font-sans);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--ink);
+  font-style: normal;
+  line-height: 1.4;
+  max-width: 30ch;
+  border: none;
+  padding: 0;
+  text-align: center;
+}
+.rs-audio-player { width: 100%; max-width: 320px; margin-top: 4px; }
+
+/* ── Note bar (typed + voice note) ──────────────────────────────────────── */
+.rs-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 380px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 12px 0 0;
+}
+.rs-mic {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: none;
+  border: 1px solid var(--rule);
+  font-size: 14px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+  order: 2;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+.rs-mic:hover { border-color: var(--ink); color: var(--ink); }
+.rs-mic-on {
+  background: var(--discard);
+  border-color: var(--discard);
+  color: #FFFFFF;
+  animation: rs-pulse 1.1s ease-in-out infinite;
+}
+@keyframes rs-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+.rs-note-text {
+  flex: 1;
+  min-width: 0;
+  order: 1;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  background: none;
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+/* iPhone Safari zooms the page when focused inputs are under 16px — that
+   blows the swipe layout. Keep notes readable on desktop; 16px on touch. */
+@media (hover: none) and (pointer: coarse) {
+  .rs-note-text { font-size: 16px; letter-spacing: 0.02em; }
+}
+.rs-note-text::placeholder {
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.rs-note-text:focus {
+  outline: none;
+  border-color: var(--ink);
+}
+.rs-note-status {
+  flex: none;
+  order: 3;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.rs-note-clear {
+  background: none;
+  border: none;
+  color: var(--discard);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  margin-left: 2px;
+}
+
+/* ── Read-only replay annotations ───────────────────────────────────────── */
+.rs-swipe-readonly .rs-note { display: none !important; }
+.rs-demo-annot {
+  margin: 0.1rem 0.9rem 0.2rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  /* Sits below the capline in the same column, inside the scaled picture's overflow, so
+     it needs the same rescue. Not just cosmetic here: this block can hold an <audio>
+     player, and a transform hit-tests outside its box as well as painting there — without
+     this the picture silently swallows the play button. (2026-07-29) */
+  position: relative;
+  z-index: 6;
+}
+.rs-demo-annot-keep    { border-left-color: var(--keep); }
+.rs-demo-annot-revise  { border-left-color: var(--revise); }
+.rs-demo-annot-discard { border-left-color: var(--discard); }
+.rs-demo-verdict {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.rs-demo-annot-keep    .rs-demo-verdict { color: var(--keep); }
+.rs-demo-annot-revise  .rs-demo-verdict { color: var(--revise); }
+.rs-demo-annot-discard .rs-demo-verdict { color: var(--discard); }
+.rs-demo-note {
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--ink);
+  font-style: italic;
+}
+.rs-demo-note-empty { color: var(--dim); font-style: normal; }
+.rs-demo-audio { width: 100%; height: 34px; margin-top: 0.1rem; }
+
+/* ── Activation panel ───────────────────────────────────────────────────── */
+.rs-activate {
+  max-width: 420px;
+  margin: 8vh auto 0;
+  padding: 1.6rem 1.4rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  text-align: center;
+}
+.rs-activate-title {
+  font-family: var(--font-sans);
+  font-size: 1.35rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+.rs-activate-sub { font-size: 0.85rem; color: var(--body); line-height: 1.5; }
+.rs-activate-form { display: flex; gap: 0.5rem; }
+.rs-activate-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.7rem 0.9rem;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+}
+.rs-activate-input:focus { outline: none; border-color: var(--ink); }
+.rs-activate-go {
+  flex: none;
+  background: var(--ink);
+  border: none;
+  color: var(--bg);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0 1.1rem;
+  border-radius: var(--radius);
+  min-height: 44px;
+  transition: opacity 0.15s;
+}
+.rs-activate-go:hover { opacity: 0.85; }
+.rs-activate-status { font-size: 0.8rem; color: var(--dim); min-height: 1.2em; }
+.rs-activate-alt { font-size: 0.8rem; color: var(--dim); }
+.rs-activate-alt a { color: var(--ink); text-decoration: underline; }
+.rs-activate-back {
+  margin-top: 0.4rem;
+  background: transparent;
+  border: 1px solid var(--rule-strong);
+  color: var(--body);
+  border-radius: var(--radius);
+  padding: 0.55rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  min-height: 42px;
+}
+.rs-activate-back:hover { border-color: var(--ink); color: var(--ink); }
+
+/* ── Phone panel ────────────────────────────────────────────────────────── */
+.rs-phone-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(15, 15, 17, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+[data-theme="light"] .rs-phone-panel {
+  background: rgba(255, 255, 255, 0.75);
+}
+.rs-phone-inner {
+  max-width: 380px;
+  width: 100%;
+  background: var(--bg-raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-lg);
+  padding: 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.rs-phone-inner h3 {
+  font-family: var(--font-sans);
+  color: var(--ink);
+  font-size: 1.15rem;
+  font-weight: 500;
+}
+.rs-phone-inner p { font-size: 0.85rem; color: var(--body); line-height: 1.5; }
+.rs-phone-url {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.8rem;
+  user-select: all;
+}
+.rs-phone-note { font-size: 0.75rem !important; color: var(--dim) !important; }
+.rs-phone-close {
+  margin-top: 0.3rem;
+  background: var(--ink);
+  border: none;
+  color: var(--bg);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius);
+  min-height: 42px;
+  transition: opacity 0.15s;
+}
+.rs-phone-close:hover { opacity: 0.85; }
+
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .rs-card, .rs-card-exit, .rs-btn, .rs-deck-btn { transition: none; }
+  .rs-mic-on { animation: none; }
+}
+
+/* ════════ FULL-SCREEN SWIPE — column fills between header and chrome ═════ */
+
+/* Surface = a column filling everything between the header and status line. */
+#rs-surface.rs-swipe-root {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 14px 0;
+}
+.rs-app:has(#rs-surface:not([hidden]) .rs-card-kind-image) .rs-surface,
+.rs-app:has(#rs-surface:not([hidden]) .rs-card-kind-video) .rs-surface,
+#rs-surface.rs-swipe-root:has(.rs-card-kind-image),
+#rs-surface.rs-swipe-root:has(.rs-card-kind-video) {
+  flex: 1 0 auto;
+  min-height: auto;
+  height: auto;
+  overflow: visible;
+}
+
+/* The card stack takes ALL the leftover height; the reading box fills it. */
+#rs-surface .rs-stack {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+/* The card itself is an INVISIBLE, full-width box (no panel/border/shadow). */
+#rs-surface .rs-card {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0 0.2rem;
+  gap: 0.7rem;
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* Only the top card shows — behind cards would be ghost duplicates. */
+#rs-surface .rs-card[data-offset="1"],
+#rs-surface .rs-card[data-offset="2"] { display: none; }
+
+/* Copy sits on the Back row — never a band above the stack. */
+.rs-card-copy {
+  position: static;
+  z-index: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--dim);
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-chip);
+  padding: 0.2rem 0.42rem;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.15s, background 0.15s, color 0.15s, border-color 0.15s;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.rs-card-copy:hover  { opacity: 1; border-color: var(--ink); color: var(--ink); }
+.rs-card-copy:active { transform: translateY(1px); }
+.rs-card-copy-done {
+  color: var(--bg);
+  background: var(--ink);
+  border-color: transparent;
+  opacity: 1;
+}
+#rs-surface .rs-card-script { -webkit-user-select: text; user-select: text; }
+
+/* TEXT / SCRIPT / LINE: the reading box fills the stack down to notes. */
+#rs-surface .rs-card-kind-text,
+#rs-surface .rs-card-kind-script,
+#rs-surface .rs-card-kind-chapter,
+#rs-surface .rs-card-kind-line,
+#rs-surface .rs-card-kind-logline {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  max-width: none;
+}
+#rs-surface .rs-card-kind-text    .rs-card-title,
+#rs-surface .rs-card-kind-text    .rs-card-preview,
+#rs-surface .rs-card-kind-logline .rs-card-title,
+#rs-surface .rs-card-kind-logline .rs-card-preview,
+#rs-surface .rs-card-kind-script  .rs-card-title,
+#rs-surface .rs-card-kind-script  .rs-card-preview,
+#rs-surface .rs-card-kind-script  .rs-card-script,
+#rs-surface .rs-card-kind-chapter .rs-card-script,
+#rs-surface .rs-card-kind-line    .rs-card-line-quote {
+  max-width: calc(600px * var(--rs-card-size, 1));
+  margin-left: auto;
+  margin-right: auto;
+}
+#rs-surface .rs-card-kind-text .rs-card-preview,
+#rs-surface .rs-card-kind-logline .rs-card-preview,
+#rs-surface .rs-card-kind-script .rs-card-script,
+#rs-surface .rs-card-kind-chapter .rs-card-script {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  width: 100%;
+}
+#rs-surface .rs-card-kind-text .rs-card-preview,
+#rs-surface .rs-card-kind-logline .rs-card-preview {
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 16px 18px;
+}
+#rs-surface .rs-card-kind-script .rs-card-script,
+#rs-surface .rs-card-kind-chapter .rs-card-script {
+  font-size: calc(13px * var(--rs-card-size, 1));
+}
+#rs-surface .rs-card-kind-line .rs-card-line-quote {
+  font-size: calc(21px * var(--rs-card-size, 1));
+}
+#rs-surface .rs-card-kind-text .rs-card-preview,
+#rs-surface .rs-card-kind-logline .rs-card-preview {
+  font-size: calc(14px * var(--rs-card-size, 1));
+}
+/* Logline: pitch first; quiet name underneath (not above — that blocked the read). */
+#rs-surface .rs-card-kind-logline .rs-card-preview {
+  font-size: calc(17px * var(--rs-card-size, 1));
+  line-height: 1.45;
+  color: var(--ink);
+  text-align: left;
+}
+#rs-surface .rs-card-kind-logline .rs-card-title-after {
+  font-size: calc(11px * var(--rs-card-size, 1));
+  color: var(--dim);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-align: left;
+  margin: 0.85rem 0 0;
+  opacity: 0.85;
+}
+
+/* IMAGE / VIDEO — size slider grows the PICTURE and the review column. At 1 = as large as the leftover frame. Bigger =
+   picture, box, note, and Yes/No all move down together so the whole
+   picture stays uncropped. Size against a stable leftover (not the
+   stack itself — that looped and cropped). */
+#rs-surface.rs-swipe-root:has(.rs-card-kind-image) .rs-stack,
+#rs-surface.rs-swipe-root:has(.rs-card-kind-video) .rs-stack {
+  flex: 1 0 auto;
+  min-height: auto;
+  min-width: auto;
+  height: auto;
+  width: max-content;
+  max-width: none;
+  overflow: visible;
+  align-self: center;
+}
+#rs-surface .rs-card.rs-card-kind-image,
+#rs-surface .rs-card.rs-card-kind-video {
+  flex: 0 0 auto;
+  max-width: none;
+  width: max-content;
+  min-width: 0;
+  height: max-content;
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  gap: 0;
+  margin: auto;
+}
+/* Must beat the display:flex above — same id+two-classes vs id+class+attr. */
+#rs-surface .rs-card.rs-card-kind-image[data-offset="1"],
+#rs-surface .rs-card.rs-card-kind-image[data-offset="2"],
+#rs-surface .rs-card.rs-card-kind-video[data-offset="1"],
+#rs-surface .rs-card.rs-card-kind-video[data-offset="2"] {
+  display: none;
+}
+#rs-surface .rs-card.rs-card-kind-image .rs-card-head,
+#rs-surface .rs-card.rs-card-kind-image .rs-card-title,
+#rs-surface .rs-card.rs-card-kind-image .rs-card-preview,
+#rs-surface .rs-card.rs-card-kind-image .rs-card-toptext,
+#rs-surface .rs-card.rs-card-kind-image .rs-card-foot,
+#rs-surface .rs-card.rs-card-kind-video .rs-card-head,
+#rs-surface .rs-card.rs-card-kind-video .rs-card-title,
+#rs-surface .rs-card.rs-card-kind-video .rs-card-preview,
+#rs-surface .rs-card.rs-card-kind-video .rs-card-toptext,
+#rs-surface .rs-card.rs-card-kind-video .rs-card-foot {
+  display: none !important;
+}
+#rs-surface .rs-card.rs-card-kind-image .rs-card-media,
+#rs-surface .rs-card.rs-card-kind-video .rs-card-media {
+  flex: 0 0 auto;
+  width: max-content;
+  height: max-content;
+  max-width: none;
+  max-height: none;
+  min-height: 0;
+  margin: 0;
+  display: block;
+  border: none;
+  background: transparent;
+  overflow: visible;
+  border-radius: 0;
+}
+#rs-surface .rs-card.rs-card-kind-image .rs-card-media img,
+#rs-surface .rs-card.rs-card-kind-image .rs-card-media video,
+#rs-surface .rs-card.rs-card-kind-video .rs-card-media img,
+#rs-surface .rs-card.rs-card-kind-video .rs-card-media video {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: calc(var(--rs-card-base-w, calc(100vw - 28px)) * var(--rs-card-size, 1));
+  max-height: calc(var(--rs-card-base-h, calc(100dvh - 18rem)) * var(--rs-card-size, 1));
+  object-fit: contain;
+  margin: 0;
+  flex-shrink: 0;
+  cursor: zoom-in;
+}
+#rs-surface .rs-card.rs-card-kind-image .rs-card-capline,
+#rs-surface .rs-card.rs-card-kind-video .rs-card-capline {
+  align-self: stretch;
+  width: auto;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* Unlabeled size slider — no S/M/L/XL. */
+.rs-card-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 160px;
+  max-width: 240px;
+  margin-left: 0;
+  min-width: 110px;
+}
+.rs-card-size-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 96px;
+  height: 6px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--rule-strong, var(--rule));
+  outline: none;
+  cursor: pointer;
+  accent-color: var(--ink);
+}
+.rs-card-size-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--ink);
+  border: 2px solid var(--bg, #0F0F11);
+  box-shadow: 0 0 0 1px var(--rule);
+  cursor: pointer;
+}
+.rs-card-size-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--ink);
+  border: 2px solid var(--bg, #0F0F11);
+  box-shadow: 0 0 0 1px var(--rule);
+  cursor: pointer;
+}
+.rs-card-size-btn,
+.rs-card-size-label { display: none !important; }
+#rs-header-sub {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 36px;
+  /* Keep above the card so Back + size slider stay clickable even when the
+     picture is zoomed large inside its frame. Verdict chrome uses the same
+     idea (z-index / chrome-lift). (2026-07-20; zoom model updated 2026-08-13) */
+  position: relative;
+  z-index: 40;
+}
+#rs-header-sub .rs-deck-head,
+#rs-header-sub .rs-deck-count { display: none !important; }
+
+/* NO FRAME chrome: tag/caption hug top; title/preview/count hug bottom. */
+#rs-surface.rs-swipe-root { padding: 0 14px 0; }
+#rs-surface .rs-stack { padding: 0; }
+#rs-surface .rs-card-kind-image .rs-card-head,
+#rs-surface .rs-card-kind-video .rs-card-head {
+  flex: 0 0 auto;
+  margin: 0;
+  justify-content: center;
+  padding: 2px 0 4px;
+}
+#rs-surface .rs-card-kind-image .rs-card-toptext,
+#rs-surface .rs-card-kind-video .rs-card-toptext {
+  flex: 0 0 auto;
+  margin: 0 auto 4px;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+#rs-surface .rs-card-kind-image .rs-card-title,
+#rs-surface .rs-card-kind-video .rs-card-title {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.25;
+  text-align: center;
+  padding: 4px 0 0;
+}
+#rs-surface .rs-card-kind-image .rs-card-preview,
+#rs-surface .rs-card-kind-video .rs-card-preview {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  text-align: center;
+  color: var(--dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-height: none;
+}
+#rs-surface .rs-card-kind-image .rs-card-foot,
+#rs-surface .rs-card-kind-video .rs-card-foot {
+  flex: 0 0 auto;
+  justify-content: center;
+  font-size: 0.58rem;
+  opacity: 0.75;
+  padding-top: 2px;
+}
+#rs-surface .rs-card-kind-image .rs-card-toptext,
+#rs-surface .rs-card-kind-image .rs-card-title,
+#rs-surface .rs-card-kind-image .rs-card-preview,
+#rs-surface .rs-card-kind-video .rs-card-toptext,
+#rs-surface .rs-card-kind-video .rs-card-title,
+#rs-surface .rs-card-kind-video .rs-card-preview {
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Full-screen tap-to-zoom viewer for any swipe card image. */
+.rs-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.93);
+  display: none;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 20px 10px 46px;
+  text-align: center;
+  cursor: zoom-out;
+}
+.rs-lightbox.rs-lightbox-on { display: block; }
+.rs-lightbox img {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.7);
+}
+.rs-lightbox-close {
+  position: fixed;
+  top: 12px;
+  right: 14px;
+  width: 42px;
+  height: 42px;
+  font: 700 20px/1 system-ui, sans-serif;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  cursor: pointer;
+  z-index: 10000;
+}
+.rs-lightbox-hint {
+  position: fixed;
+  bottom: 12px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+  font: 500 12px/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  pointer-events: none;
+}
+
+/* Note bar + Yes/Revise/No: pinned under the stack. */
+#rs-surface .rs-note,
+#rs-surface .rs-actions {
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 380px;
+  margin-left: auto;
+  margin-right: auto;
+}
+#rs-surface .rs-actions {
+  padding: 14px 0 calc(14px + env(safe-area-inset-bottom));
+}
+
+/* Compact review chrome — denser note + verdicts (maps 2026-07-15 compact idea into Ink/Mono) */
+#rs-surface .rs-note { padding-top: 10px; }
+#rs-surface .rs-note-text { padding: 9px 12px; }
+#rs-surface .rs-mic { width: 38px; height: 38px; }
+
+/* ── Card label — option B, from four mockups ──
+   One quiet line UNDER the picture: title, then caption. Deliberately NOT a panel.
+   Every earlier attempt gave this text its own background and border, which reads
+   as a second frame around the artwork — the thing that kept making image cards
+   look wrong ("two frames is killing us" then "no frame at all", 2026-07-15).
+   A hairline rule and dim type carry the same information and then disappear.
+   It also sits OUTSIDE .rs-card-media, which fixes the side-by-side bug at the
+   root: that box centres its child, so it must only ever have one. */
+.rs-card-capline {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 9px 14px 11px;
+  border-top: 1px solid var(--rule);
+  /* The picture used to be scaled with a transform, which paints outside its layout box,
+     so this line got painted over — the user hit it at 130% zoom. That is fixed at the
+     source now: the media box carries the size and the column reflows, so nothing
+     overflows onto this line. The stacking context stays as cheap insurance for any
+     residual paint order; the background does NOT, because a plate over artwork that
+     never gets covered is just a band across the picture for no reason. (2026-07-29) */
+  position: relative;
+  z-index: 6;
+  background: transparent;
+  color: var(--body);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: center;
+  overflow-wrap: break-word;
+}
+.rs-card-capline b { color: var(--ink); font-weight: 600; }
+@media (max-width: 560px) {
+  .rs-card-capline { font-size: 11.5px; padding: 7px 11px 9px; }
+}

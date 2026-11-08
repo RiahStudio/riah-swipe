@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>Projects — Riah Swipe</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="apple-touch-icon" href="./favicon-512.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="./shared.css">
+  <script src="./theme.js"></script>
+  <style>
+    .projects-main { padding: 0 0 4rem; }
+    .projects-head {
+      display: flex; justify-content: space-between; gap: 1rem; align-items: end;
+      margin: 44px 0 22px;
+    }
+    .projects-head h1 {
+      font: 500 30px var(--font-sans); letter-spacing: -0.01em; color: var(--ink); margin: 0;
+    }
+    .projects-head p { color: var(--body); font-size: 13.5px; margin: 8px 0 0; }
+    .workspace { margin: 0 0 18px; }
+    .workspace-head, .project-head, .deck {
+      display: flex; justify-content: space-between; gap: 1rem; align-items: center;
+    }
+    .workspace-head {
+      margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--rule);
+    }
+    .workspace-head h2 {
+      margin: 0; font: 500 20px var(--font-sans); color: var(--ink); letter-spacing: -0.01em;
+    }
+    .usage {
+      font: 400 10.5px var(--font-mono); color: var(--dim);
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .project {
+      background: transparent; border: 1px solid var(--rule-strong);
+      border-radius: var(--radius-code); padding: 22px 26px; margin: 0 0 14px;
+    }
+    .project-head h3 {
+      color: var(--ink); font: 500 15px var(--font-sans); margin: 0;
+    }
+    .deck-list { display: grid; gap: 10px; margin-top: 16px; }
+    .deck {
+      background: var(--bg-raised); border: 1px solid var(--rule);
+      border-radius: var(--radius); padding: 14px 16px;
+    }
+    .deck-name { color: var(--ink); font-weight: 600; font-size: 14px; }
+    .deck-meta {
+      font: 400 11px var(--font-mono); color: var(--dim); margin-top: 4px;
+    }
+    .count {
+      font: 400 11px var(--font-mono); font-variant-numeric: tabular-nums;
+      color: var(--body); white-space: nowrap; letter-spacing: 0.04em;
+    }
+    .status {
+      display: inline-block; padding: 3px 9px; border: 1px solid var(--rule-strong);
+      border-radius: var(--radius-pill); font: 700 9px var(--font-mono);
+      text-transform: uppercase; letter-spacing: 0.12em; margin-left: 8px;
+    }
+    .status-open { color: var(--keep); border-color: var(--keep-line); background: var(--keep-soft); }
+    .status-done { color: var(--body); }
+    .status-draft { color: var(--revise); border-color: var(--revise-line); background: var(--revise-soft); }
+    .notify {
+      display: flex; gap: 0.5rem; align-items: center;
+      color: var(--body); font-size: 12.5px;
+    }
+    .empty { color: var(--body); padding: 1rem 0; font-size: 13px; }
+    @media (max-width: 650px) {
+      .projects-head, .workspace-head, .deck { align-items: flex-start; flex-direction: column; }
+      .count { white-space: normal; }
+      .project { padding: 18px 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap-narrow">
+    <nav class="nav" aria-label="Main">
+      <a class="nav-logo" href="./"><span class="riah-wordmark">Riah</span> <span class="product-name">Swipe</span></a>
+      <div class="nav-links">
+        <a href="./review">Review</a>
+        <button type="button" class="theme-toggle" data-theme-toggle title="Toggle light / dark" aria-label="Toggle light / dark">◐</button>
+        <a href="#" id="logout">Log out</a>
+      </div>
+    </nav>
+    <main class="projects-main">
+      <header class="projects-head">
+        <div>
+          <div class="eyebrow">Hosted workspace</div>
+          <h1>Projects</h1>
+          <p>Decks in. Decisions back.</p>
+        </div>
+        <span id="live" class="usage">Connecting…</span>
+      </header>
+      <div id="projects" aria-live="polite"><p class="empty">Loading…</p></div>
+    </main>
+  </div>
+  <script type="module" src="./projects.js"></script>
+</body>
+</html>

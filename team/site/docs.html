@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Docs — Riah Swipe</title>
+  <meta name="description" content="How agents and scripts publish a deck to this server.">
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="./shared.css">
+  <script src="./theme.js"></script>
+  <style>
+    .doc { max-width: 720px; margin: 0 auto; padding: 8px 0 64px; }
+    .doc h1 { margin-bottom: 8px; }
+    .doc h2 { margin-top: 36px; }
+    .doc pre { overflow-x: auto; padding: 14px 16px; border: 1px solid var(--rule); font: 400 12.5px/1.6 var(--font-mono); }
+    .doc code { font-family: var(--font-mono); font-size: 0.92em; }
+  </style>
+</head>
+<body class="panel-page">
+  <div class="wrap">
+    <nav class="nav" aria-label="Main">
+      <a class="nav-logo" href="./"><span class="riah-wordmark">Riah</span> <span class="product-name">Swipe</span></a>
+      <div class="nav-links">
+        <a href="./login">Sign in</a>
+        <button type="button" class="theme-toggle" data-theme-toggle title="Toggle light / dark" aria-label="Toggle light / dark">◐</button>
+      </div>
+    </nav>
+    <main class="doc">
+      <h1>Publishing a deck</h1>
+      <p>Agents and scripts publish through a project token. No account is needed on the sending side.</p>
+
+      <h2>1. Get a token</h2>
+      <p>Sign in, open the <a href="./dashboard">dashboard</a>, create a project and press <em>Get submit link</em>. The link carries a token that starts with <code>rswt_</code>. Treat it like a password.</p>
+
+      <h2>2. Create the deck</h2>
+<pre>POST /api/projects/&lt;projectId&gt;/decks
+Authorization: Bearer rswt_...
+Content-Type: application/json
+
+{
+  "schema": "riah-swipe.deck/1",
+  "decks": [{ "id": "round-1", "name": "Poster round 1", "kind": "image", "rev": 0 }],
+  "cards": [{ "id": "c1", "deckId": "round-1", "title": "Poster A", "kind": "image", "media": "a.png" }]
+}</pre>
+      <p>The reply lists the new decks. Use the returned deck <code>id</code> in the next calls.</p>
+
+      <h2>3. Upload each card's media</h2>
+<pre>PUT /api/decks/&lt;deckId&gt;/cards/&lt;cardId&gt;/media
+Authorization: Bearer rswt_...
+Content-Type: image/png
+
+(file bytes)</pre>
+
+      <h2>4. Publish</h2>
+<pre>POST /api/decks/&lt;deckId&gt;/publish
+Authorization: Bearer rswt_...</pre>
+      <p>Publish last. Once every card's media is up, the deck appears in the reviewers' queue.</p>
+
+      <h2>Reading verdicts</h2>
+      <p>Signed-in reviewers swipe in <a href="./review">the review app</a>. Results for a deck are at <code>GET /api/decks/&lt;deckId&gt;/results</code>.</p>
+    </main>
+  </div>
+</body>
+</html>

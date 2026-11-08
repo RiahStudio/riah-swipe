@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="description" content="Riah Swipe — swipe keep/revise/discard verdicts over your team's decks." />
+
+  <meta name="theme-color" content="#0F0F11" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Riah Swipe" />
+  <meta name="mobile-web-app-capable" content="yes" />
+
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
+  <link rel="apple-touch-icon" href="icons/icon-512.png" />
+
+  <!-- Typography: loads when online; stack falls back to system-ui offline. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Space+Grotesk:wght@400;500;600;700&amp;family=Space+Mono:wght@400;700&amp;display=swap" />
+
+  <link rel="stylesheet" href="styles/app.css?v=20260828growframe" />
+  <title>Riah Swipe</title>
+  <!-- Theme: same key as the site (rsw-theme); dark default. Inline so there is no flash. -->
+  <script>
+    (function () {
+      var KEY = 'rsw-theme';
+      function apply(theme) {
+        var t = theme === 'light' ? 'light' : 'dark';
+        if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        else document.documentElement.removeAttribute('data-theme');
+        try { localStorage.setItem(KEY, t); } catch (e) { /* ignore */ }
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', t === 'light' ? '#FFFFFF' : '#0F0F11');
+      }
+      function current() {
+        try { return localStorage.getItem(KEY) || 'dark'; } catch (e) { return 'dark'; }
+      }
+      apply(current());
+      document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('[data-theme-toggle]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            apply(current() === 'light' ? 'dark' : 'light');
+          });
+        });
+      });
+    })();
+  </script>
+</head>
+<body>
+  <!-- ReviewGate crop marks — desktop margins only; under the column; pointer-events none -->
+  <div class="rs-regmarks" aria-hidden="true">
+    <div class="rs-regmark rs-regmark-tl"></div>
+    <div class="rs-regmark rs-regmark-tr"></div>
+    <div class="rs-regmark rs-regmark-bl"></div>
+    <div class="rs-regmark rs-regmark-br"></div>
+    <div class="rs-regmark-cap rs-regmark-cap-tl">REVIEW GATE</div>
+    <div class="rs-regmark-cap rs-regmark-cap-br">RSW · 2026</div>
+  </div>
+
+  <main class="rs-app" id="rs-app">
+    <header class="rs-header">
+      <div class="rs-header-row">
+        <div class="rs-logo" aria-label="Riah Swipe">
+          <span class="riah-brand" aria-hidden="true">Riah</span>
+          <span class="riah-product" aria-hidden="true">Swipe</span>
+        </div>
+        <div class="rs-header-tools">
+          <div class="rs-tagline" aria-hidden="true">KEEP · CUT</div>
+          <button class="rs-phone-btn" id="rs-phone-btn" type="button" title="Swipe from your phone — same wifi" aria-label="Phone URL">📱</button>
+          <button class="theme-toggle" type="button" data-theme-toggle title="Toggle light / dark" aria-label="Toggle light / dark">◐</button>
+          <a class="rs-settings-btn" href="./dashboard" title="Dashboard — workspaces and projects" aria-label="Settings">
+            <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41L9.25 5.35c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"></path></svg>
+          </a>
+        </div>
+      </div>
+      <div class="rs-header-sub" id="rs-header-sub"></div>
+    </header>
+
+    <div class="rs-banner" id="rs-banner" hidden></div>
+
+    <section id="rs-picker"  class="rs-picker"  aria-label="Decks"></section>
+    <section id="rs-surface" class="rs-surface" aria-label="Swipe surface" hidden></section>
+
+    <div class="rs-status" id="rs-status" role="status" aria-live="polite"></div>
+  </main>
+
+  <script type="module" src="src/app.js?v=20260828growframe"></script>
+  <noscript>
+    <div style="padding:2rem;text-align:center;font-family:system-ui,sans-serif;color:#9A9AA2">
+      Riah Swipe needs JavaScript — it's a swipe app.
+    </div>
+  </noscript>
+</body>
+</html>

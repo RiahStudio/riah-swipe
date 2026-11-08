@@ -171,9 +171,18 @@ bundled skill (`skills/riah-swipe/SKILL.md`) teaches an agent to write it in one
 **Can I use it from my phone?** Yes: run with `--host 0.0.0.0` and open the machine's LAN address,
 but read [SECURITY.md](SECURITY.md) first; there is no auth on the board.
 
-**Can two people review the same deck?** One reviewer at a time per deck is the intended flow.
+**Can two people review the same deck?** On the local board, one reviewer at a time per deck is
+the intended flow. For a team, use the team server below.
 
 **Unknown card kinds?** They render as text, so a deck never fails to load over a label.
+
+## Team server
+
+The board above is a one-person tool on your own machine. If a group needs to review together,
+[`team/`](team/README.md) is a small self-hosted server people sign into. It has workspaces,
+projects, reviewer and submitter roles, and project tokens so agents can send decks in. Reviews
+happen in the browser. It's free too: no billing, no license keys. It needs Node 20+ and one
+dependency (better-sqlite3). See [team/README.md](team/README.md) to set it up.
 
 ## Layout
 
@@ -183,6 +192,7 @@ server/     serve.mjs (board + API + /mcp)  ·  swipe-mcp.mjs (MCP server, stdio
 skills/     agent skill  ·  .claude-plugin/ + .mcp.json  Claude Code plugin manifest
 examples/   sample root with one starter deck
 test/       node:test integration tests
+team/       optional self-hosted team server (accounts, workspaces, shared review)
 ```
 
 ## Known limitations

@@ -1,0 +1,19 @@
+{
+  "name": "riah-swipe-team",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Self-hosted team review server for Riah Swipe decks.",
+  "license": "MIT",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0"
+  }
+}

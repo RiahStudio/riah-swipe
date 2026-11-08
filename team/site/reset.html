@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset password — Riah Swipe</title>
+  <meta name="description" content="Reset your Riah Swipe password.">
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="apple-touch-icon" href="./favicon-512.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="./shared.css">
+  <script src="./theme.js"></script>
+</head>
+<body class="panel-page">
+  <div class="wrap">
+    <nav class="nav" aria-label="Main">
+      <a class="nav-logo" href="./"><span class="riah-wordmark">Riah</span> <span class="product-name">Swipe</span></a>
+      <div class="nav-links">
+        <a href="./docs">Docs</a>
+        <button type="button" class="theme-toggle" data-theme-toggle title="Toggle light / dark" aria-label="Toggle light / dark">◐</button>
+      </div>
+    </nav>
+  </div>
+  <main class="panel-main">
+    <!-- Request form (no token in URL) -->
+    <div class="panel" id="request-panel" hidden>
+      <div class="auth-tabs" role="tablist">
+        <a class="auth-tab" href="./signup" role="tab">Sign up</a>
+        <a class="auth-tab is-active" href="./login" role="tab">Log in</a>
+      </div>
+      <div class="panel-body">
+        <h1>Reset your password</h1>
+        <p class="sub">Enter the email on your account. If it exists, a reset link is on its way.</p>
+        <form id="rf">
+          <div class="field">
+            <label for="email">Email</label>
+            <input id="email" type="email" autocomplete="email" required placeholder="you@example.com">
+          </div>
+          <div class="form-status" id="rstatus" aria-live="polite"></div>
+          <button class="btn btn-primary btn-block" type="submit">Send reset link →</button>
+        </form>
+        <p class="alt"><a href="./login">← Back to log in</a></p>
+      </div>
+    </div>
+
+    <!-- Set-new-password form (?token=…) -->
+    <div class="panel" id="set-panel" hidden>
+      <div class="panel-body">
+        <h1>Choose a new password</h1>
+        <p class="sub">This signs you out everywhere else.</p>
+        <form id="sf">
+          <div class="field">
+            <label for="password">New password</label>
+            <input id="password" type="password" autocomplete="new-password" minlength="10" required placeholder="••••••••••••">
+          </div>
+          <div class="form-status" id="sstatus" aria-live="polite"></div>
+          <button class="btn btn-primary btn-block" type="submit">Set password →</button>
+        </form>
+        <p class="alt"><a href="./login">← Back to log in</a></p>
+      </div>
+    </div>
+  </main>
+  <script>
+    const token = new URLSearchParams(location.search).get('token');
+    document.getElementById(token ? 'set-panel' : 'request-panel').hidden = false;
+
+    const rf = document.getElementById('rf'), rstatus = document.getElementById('rstatus');
+    rf.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      rstatus.textContent = 'Sending…'; rstatus.className = 'form-status';
+      try {
+        const res = await fetch('./api/password-reset-request', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: document.getElementById('email').value }),
+        });
+        const out = await res.json();
+        rstatus.textContent = out.message || out.error || 'Done.';
+        if (res.ok) rstatus.className = 'form-status ok';
+      } catch { rstatus.textContent = 'Network hiccup — try again.'; }
+    });
+
+    const sf = document.getElementById('sf'), sstatus = document.getElementById('sstatus');
+    sf.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      sstatus.textContent = 'Saving…'; sstatus.className = 'form-status';
+      try {
+        const res = await fetch('./api/password-reset', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, password: document.getElementById('password').value }),
+        });
+        const out = await res.json();
+        if (res.ok && out.ok) {
+          sstatus.className = 'form-status ok';
+          sstatus.textContent = 'Done — log in with your new password.';
+          setTimeout(() => (location.href = './login'), 1200);
+          return;
+        }
+        sstatus.textContent = out.error || 'That didn’t work — request a fresh link.';
+      } catch { sstatus.textContent = 'Network hiccup — try again.'; }
+    });
+  </script>
+</body>
+</html>
