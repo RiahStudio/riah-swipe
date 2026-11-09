@@ -37,7 +37,7 @@ HERE = Path(__file__).resolve().parent
 BOARD_DIR = HERE / "board"
 # Surfaces where a person is sitting at the terminal and can be waited for.
 INTERACTIVE = {"cli", "tui", "desktop", "acp", "local"}
-# Used only when Hermes' own session helpers cannot be imported.
+# Surfaces that are not a chat app: Hermes' own list, plus cron and ACP.
 NON_MESSAGING = {"", "api_server", "cli", "codex", "desktop", "gateway", "kanban", "local",
                  "msgraph_webhook", "tool", "tui", "webhook", "cron", "acp"}
 DEFAULT_WAIT = 300
@@ -106,12 +106,13 @@ def _surface() -> str:
 
 
 def _is_messaging() -> bool:
-    try:
-        from gateway.session_context import session_is_messaging_surface
-
-        return bool(session_is_messaging_surface())
-    except Exception:
-        return _surface() not in NON_MESSAGING
+    """This turn arrived over a chat app. Any known surface that isn't a local client or a
+    machine channel counts, the same test Hermes applies, read through public seams only."""
+    idents = (_ctx_call("session_surface"),
+              os.getenv("HERMES_PLATFORM") or _session_env("HERMES_SESSION_PLATFORM", ""),
+              _session_env("HERMES_SESSION_SOURCE", ""))
+    idents = (str(v or "").strip().lower() for v in idents)
+    return any(i and i not in NON_MESSAGING for i in idents)
 
 
 def _interactive() -> bool:

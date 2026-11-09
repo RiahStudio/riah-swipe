@@ -76,6 +76,21 @@ class SurfaceTests(HandlerBase):
         with fake_hermes(platform="", source=""):
             self.assertEqual(plugin._surface(), "telegram")
 
+    def test_messaging_needs_no_private_helper(self):
+        # Catalog rule 9: decided from ctx.session_surface() and session env, not
+        # gateway.session_context.session_is_messaging_surface (the fake leaves it set to False).
+        self.ctx.session_surface = lambda: "telegram"
+        with fake_hermes(platform="", source="", messaging=False):
+            self.assertTrue(plugin._is_messaging())
+            self.assertFalse(plugin._interactive())
+        for surface in ("cli", "tui", "acp", "cron"):
+            self.ctx.session_surface = lambda s=surface: s
+            with fake_hermes(platform="", source="", messaging=True):
+                self.assertFalse(plugin._is_messaging(), surface)
+        self.ctx.session_surface = lambda: "cli"
+        with fake_hermes(platform="", source="acp", messaging=True):
+            self.assertTrue(plugin._interactive())
+
 
 # --------------------------------------------------------------------------- B2 verdict merging
 
