@@ -27,9 +27,10 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"fake"
 
 
 @contextlib.contextmanager
-def fake_hermes(platform="", messaging=False, key="", interrupted=False, source=""):
+def fake_hermes(platform="", messaging=False, key="", interrupted=False, source="", chat_type="dm"):
     """Stand in for Hermes' gateway.session_context and tools.interrupt modules."""
-    env = {"HERMES_SESSION_PLATFORM": platform, "HERMES_SESSION_KEY": key, "HERMES_SESSION_SOURCE": source}
+    env = {"HERMES_SESSION_PLATFORM": platform, "HERMES_SESSION_KEY": key, "HERMES_SESSION_SOURCE": source,
+           "HERMES_SESSION_CHAT_TYPE": chat_type}
     sc = types.ModuleType("gateway.session_context")
     sc.get_session_env = lambda name, default="": env.get(name, default)
     sc.session_is_messaging_surface = lambda: messaging

@@ -143,9 +143,10 @@ class RangeTests(CoreBase):
         server = srv.BoardServer(self.root, H.BOARD_DIR)
         self.addCleanup(server.stop)
         port = server.ensure(port=H.free_port())["port"]
-        status, hdrs, body = _http(port, "GET", "/index.html")
+        auth = H.signin(server)
+        status, hdrs, body = _http(port, "GET", "/index.html", auth)
         full = len(body)
-        status, hdrs, body = _http(port, "GET", "/index.html", {"Range": "bytes=5-x"})
+        status, hdrs, body = _http(port, "GET", "/index.html", {**auth, "Range": "bytes=5-x"})
         self.assertEqual(status, 200)
         self.assertEqual(int(hdrs["content-length"]), full)
         self.assertEqual(len(body), full)
@@ -279,9 +280,10 @@ class DeckLockTests(CoreBase):
         server = srv.BoardServer(self.root, H.BOARD_DIR)
         self.addCleanup(server.stop)
         port = server.ensure(port=H.free_port())["port"]
+        auth = H.signin(server)
         for i in range(20):
             body = json.dumps({"schema": "riah-swipe.results/1", "batchId": f"nope-{i}", "results": []})
-            status, _, _ = _http(port, "POST", "/api/swipe-results", {"content-type": "application/json"},
+            status, _, _ = _http(port, "POST", "/api/swipe-results", {**auth, "content-type": "application/json"},
                                  body.encode())
             self.assertEqual(status, 400)
         self.assertEqual(len(server._httpd.RequestHandlerClass.locks), 0)
@@ -323,10 +325,12 @@ class PushTests(HandlerBase):
             return self.publish(session="tg1")["deck_id"]
 
     def _post(self, deck_id, decisions):
-        port = plugin._server_for(plugin._root()).info["port"]
+        server = plugin._server_for(plugin._root())
+        port = server.info["port"]
         ids = [f"{deck_id}-{i:02d}" for i in range(1, len(decisions) + 1)]
         body = json.dumps(H.results_payload(deck_id, ids, decisions)).encode()
-        status, _, _ = _http(port, "POST", "/api/swipe-results", {"content-type": "application/json"}, body)
+        status, _, _ = _http(port, "POST", "/api/swipe-results",
+                             {**H.signin(server), "content-type": "application/json"}, body)
         self.assertEqual(status, 200)
 
     def _wait_injected(self, n=1):

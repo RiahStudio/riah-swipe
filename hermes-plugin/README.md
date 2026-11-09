@@ -13,8 +13,8 @@ right in the chat with buttons, and you can talk back with voice notes.
 
 ## Install
 
-You need Hermes 0.21.5 or newer (0.22.5 or newer for swiping right inside
-Telegram). Then:
+You need Hermes 0.21.5 or newer (0.22.3 or newer for swiping right inside
+Telegram; tested on 0.22.5). Then:
 
 ```bash
 hermes plugins install RiahStudio/riah-swipe/hermes-plugin
@@ -99,7 +99,7 @@ Voice notes are turned into text with Hermes' own speech-to-text, the same
 one that lets Hermes understand voice messages. If Hermes already understands
 your voice messages, you're set. The audio clip is kept with the deck too.
 
-Swiping in chat needs Hermes 0.22.5 or newer, with plugins running inside
+Swiping in chat needs Hermes 0.22.3 or newer (tested on 0.22.5), with plugins running inside
 Hermes (`plugins.isolation: in_process`, which is the default). On older
 versions, with `plugins.isolation: host`, in other chat apps, or with `chat_swipe: false`,
 Hermes sends the board link instead.
@@ -107,14 +107,22 @@ Hermes sends the board link instead.
 You can also type `/swipe` to get the board link and see how recent decks are
 going, or run `hermes swipe serve` to open the board on its own.
 
+### Signing in
+
+The board link Hermes gives you signs that browser in the first time you open
+it (it ends in `/pair?c=...`, works once, and expires after 10 minutes). After
+that the browser stays signed in for 30 days and the plain board address works.
+A different browser, or the same one after 30 days, needs a fresh link: type
+`/swipe` or ask Hermes. `/swipe unpair` (or `hermes swipe unpair`) signs every
+browser out at once.
+
 ### Phone mode
 
 Set `lan: true` in the plugin's settings (Settings → Plugins → Riah Swipe, or
 `plugins.entries.riah-swipe.settings.lan` in `config.yaml`). The board then
-listens on your local network and Hermes gives you a pairing link
-(`/pair?c=...`). Open it on your phone. The link works once and expires after
-10 minutes. Your phone then keeps a cookie (good for 30 days) and stays signed
-in. If you ever need another phone, ask Hermes for a fresh link.
+listens on your local network and Hermes also gives you a phone link. Open it
+on your phone; it signs the phone in the same way. Phone links are only posted
+in direct messages, never in group chats, so ask in a DM if you need one.
 
 Two optional settings help with more unusual setups:
 
@@ -179,18 +187,26 @@ Everything stays on your computer. Specifically:
   inside the Hermes process. It stops when Hermes exits. By default it binds
   `127.0.0.1` only and refuses requests whose `Host` header is not a local
   name, which blocks DNS-rebinding pages.
-- **Phone mode listens on your network.** With `lan: true` the server binds
-  `0.0.0.0` (or the single address in `bind`) and is reachable from your local
-  network. Every request from another device needs a cookie holding a long
-  random secret (`secrets.token_urlsafe(32)`). The secret never appears in tool
-  output or links. Instead Hermes gives you a one-time pairing link
-  (`/pair?c=...`, single use, 10 minutes) that sets the cookie (HttpOnly,
-  SameSite=Strict, 30 days). Codes are compared in constant time. POSTs must
-  come from the board's own origin. The server also caps open connections,
-  times out slow clients, limits request sizes, and sends headers that stop
-  the board being framed or sniffed. Uploaded media is served in a sandbox.
-  To find your LAN address it opens a UDP socket toward a reserved test address
-  (192.0.2.1); no packet is sent.
+- **Every browser signs in, this computer's too.** Each request needs a
+  sign-in cookie, even from `127.0.0.1`, so another account on the same
+  computer, a page in your browser posting blindly to the port, or a port
+  forward can't use the board. A browser signs in by opening a one-time link
+  (`/pair?c=...`, single use, 10 minutes, compared in constant time). That
+  gives the browser its own random token (`secrets.token_urlsafe(32)`) in a
+  cookie (HttpOnly, SameSite=Lax, 30 days, named per Hermes profile). Only a
+  hash of each token is stored (`data/devices.json`, at most 50), and
+  `/swipe unpair` deletes them all. POSTs must also come from the board's own
+  origin.
+- **Phone mode listens on your network, over plain HTTP.** With `lan: true` the
+  server binds `0.0.0.0`, every network on the computer, unless you set `bind`
+  to one address. Traffic is not encrypted, so use it on a network you trust
+  (or Tailscale, which encrypts it). Phone links are never posted in group
+  chats. The server caps open connections, times out slow clients, limits
+  request sizes, and sends headers that stop the board being framed or
+  sniffed. The board page only runs its own scripts (a Content-Security-Policy
+  with `script-src 'self'` plus hashes of its two inline scripts). Uploaded
+  media is served in a sandbox. To find your LAN address it opens a UDP socket
+  toward a reserved test address (192.0.2.1); no packet is sent.
 - **Media checks.** Local files are copied only if their type is on the list
   (no SVG) and their first bytes match that type. A deck can hold at most 1 GB
   of copied media. Remote media must be `https://`.
@@ -200,10 +216,13 @@ Everything stays on your computer. Specifically:
   port and the board's persistent secret (a random value created on first run,
   readable only by you on systems that support it). It lets a second Hermes
   process reuse the same board, after proving it holds the secret, instead of
-  starting another. It is kept across restarts so paired phones stay signed in.
+  starting another; the server only answers that proof for requests from this
+  computer. The secret is never a sign-in cookie. A program running as you
+  could read it, as it could read anything else in your Hermes folder.
   Swiping in Telegram adds `data/chat-swipe.json` (which deck is open in which
   chat, and the card message's id) and copies of your voice notes in
-  `data/chat-notes/`.
+  `data/chat-notes/`. Nothing is deleted automatically; to clear everything,
+  delete the `plugin-data/riah-swipe/` folder.
 - **Files it reads.** When a card points at a local image, video or audio file,
   that one file is copied into the deck folder so the board can show it, and
   only if it sits inside an allowed folder (the working folder unless it is
@@ -213,8 +232,10 @@ Everything stays on your computer. Specifically:
 - **Messages it sends.** With `allow_gateway_injection: true`, when you finish
   a deck that Hermes made in a chat, the plugin hands that chat one short
   summary of your verdicts through Hermes' own `inject_message`. It goes only
-  to the chat that made the deck, once per change, and never from the CLI. Remote `http(s)` media links are
-  passed to the board as-is; your browser loads them, the plugin does not.
+  to the chat that made the deck, once per change, and never from the CLI. It
+  arrives as a new message, so Hermes starts a turn to follow up on it.
+  Remote `https://` media links are passed to the board as-is; your browser
+  (and Telegram, for chat cards) loads them, the plugin does not.
   Verdict notes are treated as plain data: trimmed, stripped of control
   characters, and shown to Hermes labeled as data, not instructions.
 - **Telegram messages.** Swiping in chat sends, edits and deletes only the one

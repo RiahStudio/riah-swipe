@@ -28,7 +28,7 @@ from typing import Any
 
 from . import chat_swipe
 from . import swipe_core as core
-from .swipe_server import BoardServer
+from .swipe_server import BoardServer, Devices
 
 logger = logging.getLogger(__name__)
 
@@ -167,11 +167,21 @@ def _port() -> int:
     return port if 0 < port <= 65535 else 8137
 
 
-def _board(pair: bool = False) -> dict:
+def _phone_link_ok() -> bool:
+    """Phone sign-in links go only where one person sees them: a direct message, or a
+    surface that isn't a chat app. In a group, anyone reading within 10 minutes could use it."""
+    if not _is_messaging():
+        return True
+    return _session_env("HERMES_SESSION_CHAT_TYPE", "").strip().lower() in {"dm", "private"}
+
+
+def _board(pair: bool = False, phone: bool = True) -> dict:
     """Start (or find) the board server for the current profile's data root.
 
-    With pair=True and phone mode on, the result also carries `pair_url`: a one-time link
-    that signs a phone in. The long-lived secret is never part of the result."""
+    With pair=True the result also carries `board_link`: a one-time link (10 minutes) that
+    signs a browser on this computer in and opens the board. With phone mode on (and phone
+    left True) it carries `pair_url` too, the same thing for a phone, unless this is a group
+    chat (`phone_withheld`). The long-lived secret is never part of the result."""
     root = _root()
     server = _server_for(root)
     info = dict(server.ensure(
@@ -180,10 +190,15 @@ def _board(pair: bool = False) -> dict:
         bind=str(_setting("bind", "") or ""),
         advertise_host=str(_setting("advertise_host", "") or ""),
     ))
-    if pair and info.get("lan"):
-        link = server.pair_url()
-        if link:
-            info["pair_url"] = link
+    if pair:
+        info["board_link"] = server.pair_url(local=True) or info.get("local_url")
+        if phone and info.get("lan"):
+            if _phone_link_ok():
+                link = server.pair_url()
+                if link:
+                    info["pair_url"] = link
+            else:
+                info["phone_withheld"] = True
     return info
 
 
@@ -213,10 +228,16 @@ def _err(message: str, **extra) -> str:
 
 
 def _links(info: dict) -> dict:
-    out = {"board_url": info.get("local_url")}
+    out = {"board_url": info.get("board_link") or info.get("local_url")}
+    if info.get("board_link"):
+        out["board_url_note"] = ("Opens on the computer running Hermes. It signs that browser in once "
+                                 "(the link works for 10 minutes); after that the plain address works.")
     if info.get("pair_url"):
         out["phone_url"] = info["pair_url"]
         out["phone_url_note"] = "One-time link: it works once, for 10 minutes, then the phone stays signed in."
+    elif info.get("phone_withheld"):
+        out["phone_hint"] = ("Phone sign-in links aren't posted in group chats. Ask in a direct message "
+                             "(or type /swipe there) for one.")
     elif not info.get("lan"):
         out["phone_hint"] = (
             "The board only listens on this computer. To swipe from a phone on the same Wi-Fi, "
@@ -509,7 +530,7 @@ def handle_publish(args: dict, session_id: str = "", task_id: str = "", **_: Any
         board_error = None
         info: dict = {}
         try:
-            info = _board(pair=not chat.get("ok"))
+            info = _board(pair=True, phone=not chat.get("ok"))
         except Exception as e:
             logger.warning("riah-swipe: board did not start: %s", e)
             board_error = f"{type(e).__name__}: {e}"[:300]
@@ -534,6 +555,9 @@ def handle_publish(args: dict, session_id: str = "", task_id: str = "", **_: Any
             if link:
                 tell = (f"Your deck '{deck['name']}' is ready to swipe: {link} "
                         "(this link works once; right keep, left discard, up revise with a note).")
+            elif info.get("phone_withheld"):
+                tell = (f"Your deck '{deck['name']}' is ready. I don't post phone sign-in links in group "
+                        "chats; message me directly and say /swipe for one.")
             elif info.get("lan"):
                 tell = (f"Your deck '{deck['name']}' is saved, but I couldn't make a phone pairing link "
                         "just now. Say /swipe for a fresh one.")
@@ -542,8 +566,9 @@ def handle_publish(args: dict, session_id: str = "", task_id: str = "", **_: Any
                         "running Hermes. To swipe from your phone, turn on the lan setting "
                         "(plugins.entries.riah-swipe.settings.lan: true) and publish again.")
             else:
-                tell = (f"Your deck '{deck['name']}' is ready to swipe: {info.get('local_url')} "
-                        "(right keep, left discard, up revise with a note).")
+                tell = (f"Your deck '{deck['name']}' is ready to swipe: "
+                        f"{info.get('board_link') or info.get('local_url')} "
+                        "(the link signs this browser in once; right keep, left discard, up revise with a note).")
         if chat.get("reason"):
             out["chat_swipe_unavailable"] = chat["reason"]
         return _ok(
@@ -775,7 +800,20 @@ def on_pre_llm_call(session_id: str = "", parent_session_id: str = "", task_id: 
 # --------------------------------------------------------------------------- /swipe
 
 
+def _unpair() -> str:
+    root = _root()
+    server = _servers.get(str(root))
+    n = server.unpair() if server is not None else Devices(root).clear()
+    noun = "browser" if n == 1 else "browsers"
+    return f"Riah Swipe: signed out {n} {noun}. Type /swipe for a fresh sign-in link."
+
+
 def cmd_swipe(raw_args: str = "", **_: Any) -> str:
+    if str(raw_args or "").strip().lower() == "unpair":
+        try:
+            return _unpair()
+        except Exception as e:
+            return f"Riah Swipe: couldn't sign browsers out ({type(e).__name__}: {e})"
     if str(raw_args or "").strip().lower() == "stop":
         platform = _surface()
         chat_id = _session_env("HERMES_SESSION_CHAT_ID", "")
@@ -795,9 +833,13 @@ def cmd_swipe(raw_args: str = "", **_: Any) -> str:
     try:
         info = _board(pair=True)
         root = _root()
-        lines = [f"Riah Swipe board: {info.get('local_url') or '(not reachable from this computer)'}"]
+        link = info.get("board_link") or info.get("local_url")
+        lines = [f"Riah Swipe board, on this computer (signs the browser in once): "
+                 f"{link or '(not reachable from this computer)'}"]
         if info.get("pair_url"):
             lines.append(f"Phone (same Wi-Fi, one-time link): {info['pair_url']}")
+        elif info.get("phone_withheld"):
+            lines.append("Phone sign-in links aren't posted in group chats; type /swipe in a direct message.")
         elif info.get("lan"):
             lines.append("Phone mode is on, but a pairing link could not be made. Try /swipe again.")
         else:
@@ -813,6 +855,7 @@ def cmd_swipe(raw_args: str = "", **_: Any) -> str:
             t = s["tally"]
             state = "done" if s["complete"] else f"{s['decided']}/{s['cards']} swiped"
             lines.append(f"  {s['title']}  ({state}; {t['keep']} keep, {t['revise']} revise, {t['discard']} discard)")
+        lines.append("(/swipe unpair signs every browser out; /swipe stop ends chat swiping)")
         return "\n".join(lines)
     except Exception as e:
         return f"Riah Swipe: couldn't start the board ({type(e).__name__}: {e})"
@@ -825,13 +868,18 @@ def _cli_setup(parser) -> None:
     sub = parser.add_subparsers(dest="swipe_action")
     sub.add_parser("serve", help="Run the board in the foreground until Ctrl-C")
     sub.add_parser("status", help="Print the board link and recent decks")
+    sub.add_parser("unpair", help="Sign every browser out of the board")
 
 
 def _cli_handle(args) -> int:
     action = getattr(args, "swipe_action", None) or "status"
+    if action == "unpair":
+        print(_unpair())
+        return 0
     if action == "serve":
         info = _board(pair=True)
-        print(f"Riah Swipe board: {info.get('local_url')}")
+        print(f"Riah Swipe board (one-time sign-in link for this computer): {info.get('board_link')}")
+        print(f"After that: {info.get('local_url')}")
         if info.get("pair_url"):
             print(f"Phone (same Wi-Fi, one-time link): {info['pair_url']}")
         print(f"Data: {_root()}")
@@ -857,10 +905,12 @@ TOOLS = (
 
 
 def _wire_chat(ctx) -> None:
-    """Telegram buttons + voice notes, on Hermes builds that have the platform hooks."""
+    """Telegram buttons + voice notes, on Hermes builds that have both seams it relies on:
+    register_telegram_handler (0.21.6+) and ctx.session_surface (0.22.3+). Feature checks,
+    not a version number: the installed package metadata doesn't track the release."""
     global _chat
     add_handler = getattr(ctx, "register_telegram_handler", None)
-    if not callable(add_handler):
+    if not callable(add_handler) or not callable(getattr(ctx, "session_surface", None)):
         return
     try:
         from .chat_telegram import TelegramSwipe
@@ -883,7 +933,8 @@ def register(ctx) -> None:
     ctx.register_hook("pre_llm_call", on_pre_llm_call)
     _wire_chat(ctx)
     ctx.register_command("swipe", cmd_swipe,
-                         description="Riah Swipe board link and deck tallies (/swipe stop ends chat swiping)")
+                         description="Riah Swipe board link and deck tallies (/swipe stop ends chat "
+                                     "swiping; /swipe unpair signs every browser out)")
     ctx.register_cli_command(name="swipe", help="Riah Swipe board", setup_fn=_cli_setup,
                              handler_fn=_cli_handle,
                              description="Run or inspect the Riah Swipe board for this profile.")

@@ -36,6 +36,25 @@ def server_mod():
     return sys.modules[PKG + ".swipe_server"]
 
 
+def signin(bs):
+    """Sign a test browser in the way a person does: open a one-time link. Returns the
+    Cookie header to send with later requests."""
+    import http.client
+    port = bs.info["port"]
+    link = bs.pair_url(local=True)
+    assert link, "no sign-in link"
+    path = link.split(f":{port}", 1)[1]
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        c.request("GET", path, headers={"Host": f"127.0.0.1:{port}"})
+        r = c.getresponse()
+        r.read()
+        assert r.status == 302, r.status
+        return {"Cookie": r.getheader("set-cookie").split(";")[0]}
+    finally:
+        c.close()
+
+
 def free_port():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))

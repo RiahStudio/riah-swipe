@@ -493,6 +493,9 @@ class TgCtx:
     def register_telegram_handler(self, factory):
         self.factories.append(factory)
 
+    def session_surface(self):  # 0.22.3+ seam; None means "ask the session env"
+        return None
+
     def on_unload(self, fn):
         self.unload.append(fn)
 
@@ -507,7 +510,8 @@ class TgCtx:
 @contextlib.contextmanager
 def telegram_turn(chat=CHAT, user=USER, key="agent:main:telegram:dm:100"):
     env = {"HERMES_SESSION_PLATFORM": "telegram", "HERMES_SESSION_KEY": key,
-           "HERMES_SESSION_CHAT_ID": str(chat), "HERMES_SESSION_USER_ID": str(user)}
+           "HERMES_SESSION_CHAT_ID": str(chat), "HERMES_SESSION_USER_ID": str(user),
+           "HERMES_SESSION_CHAT_TYPE": "dm"}
     sc = types.ModuleType("gateway.session_context")
     sc.get_session_env = lambda name, default="": env.get(name, default)
     sc.session_is_messaging_surface = lambda: True
@@ -732,6 +736,23 @@ class OldHermesTests(unittest.TestCase):
                 self.assertNotIn("pre_gateway_dispatch", [h[0] for h in ctx.hooks])
             finally:
                 TgCtx.register_telegram_handler = lambda self, f: self.factories.append(f)
+                plugin._shutdown()
+                plugin._ctx = None
+                plugin._chat = None
+
+    def test_no_session_surface_means_no_chat_layer(self):
+        # register_telegram_handler alone (0.21.6-0.22.2) isn't enough: the chat layer is
+        # only switched on where ctx.session_surface exists too (0.22.3+), which we tested.
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"SWIPE_ROOT": td}):
+            ctx = TgCtx()
+            del TgCtx.session_surface
+            try:
+                plugin.register(ctx)
+                self.assertIsNone(plugin._chat)
+                self.assertEqual(ctx.factories, [])
+                self.assertNotIn("pre_gateway_dispatch", [h[0] for h in ctx.hooks])
+            finally:
+                TgCtx.session_surface = lambda self: None
                 plugin._shutdown()
                 plugin._ctx = None
                 plugin._chat = None

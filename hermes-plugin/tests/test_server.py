@@ -66,6 +66,15 @@ class ServerBase(unittest.TestCase):
     def secret(self):
         return json.loads((self.root / "data" / "server.json").read_text("utf-8"))["secret"]
 
+    def auth(self):
+        if not hasattr(self, "_auth"):
+            self._auth = H.signin(self.bs)
+        return self._auth
+
+    def req(self, method, path, headers=None, body=None, host=None):
+        """A request from a browser that already signed in."""
+        return req(self.port, method, path, {**self.auth(), **(headers or {})}, body, host)
+
 
 class LocalServerTests(ServerBase):
     def make_deck(self):
@@ -75,7 +84,7 @@ class LocalServerTests(ServerBase):
                                deck_id="dk")
 
     def test_health(self):
-        st, _, body = req(self.port, "GET", "/health")
+        st, _, body = self.req("GET", "/health")
         d = json.loads(body)
         self.assertEqual(st, 200)
         self.assertEqual(d["app"], "riah-swipe")
@@ -84,85 +93,86 @@ class LocalServerTests(ServerBase):
         self.assertNotIn("hmac", d)
 
     def test_health_hmac_proof(self):
-        st, _, body = req(self.port, "GET", "/health?n=abc123")
+        st, _, body = self.req("GET", "/health?n=abc123")
         self.assertEqual(json.loads(body)["hmac"], srv.hmac_hex(self.secret(), "abc123"))
 
     def test_index_html(self):
-        st, h, body = req(self.port, "GET", "/")
+        st, h, body = self.req("GET", "/")
         self.assertEqual(st, 200)
         self.assertIn("text/html", h["content-type"])
         self.assertEqual(body, (H.BOARD_DIR / "index.html").read_bytes())
 
     def test_security_headers_everywhere(self):
         for path in ("/", "/health", "/decks/index.json", "/nope"):
-            _, h, _ = req(self.port, "GET", path)
+            _, h, _ = self.req("GET", path)
             self.assertEqual(h["x-content-type-options"], "nosniff", path)
             self.assertEqual(h["x-frame-options"], "DENY", path)
             self.assertEqual(h["referrer-policy"], "no-referrer", path)
-            self.assertEqual(h["content-security-policy"], "frame-ancestors 'none'", path)
+            want = srv.board_csp(H.BOARD_DIR) if path == "/" else srv.CSP_DEFAULT
+            self.assertEqual(h["content-security-policy"], want, path)
 
     def test_media_is_sandboxed(self):
         self.make_deck()
-        st, h, _ = req(self.port, "GET", "/decks/dk/01.mp4")
+        st, h, _ = self.req("GET", "/decks/dk/01.mp4")
         self.assertEqual(st, 200)
         self.assertEqual(h["content-security-policy"], "sandbox; default-src 'none'; frame-ancestors 'none'")
         self.assertEqual(h["x-content-type-options"], "nosniff")
-        _, h, _ = req(self.port, "GET", "/")
-        self.assertEqual(h["content-security-policy"], "frame-ancestors 'none'")
+        _, h, _ = self.req("GET", "/")
+        self.assertEqual(h["content-security-policy"], srv.board_csp(H.BOARD_DIR))
 
     def test_deck_index_and_file(self):
         self.make_deck()
-        st, _, body = req(self.port, "GET", "/decks/index.json")
+        st, _, body = self.req("GET", "/decks/index.json")
         self.assertEqual(st, 200)
         self.assertEqual(json.loads(body), {"batches": ["dk.swipe.json"]})
-        st, _, body = req(self.port, "GET", "/decks/dk.swipe.json")
+        st, _, body = self.req("GET", "/decks/dk.swipe.json")
         self.assertEqual(st, 200)
         self.assertEqual(json.loads(body)["decks"][0]["id"], "dk")
 
     def test_range_206(self):
         self.make_deck()
         n = len(MP4)
-        st, h, body = req(self.port, "GET", "/decks/dk/01.mp4", {"Range": "bytes=10-19"})
+        st, h, body = self.req("GET", "/decks/dk/01.mp4", {"Range": "bytes=10-19"})
         self.assertEqual(st, 206)
         self.assertEqual(body, MP4[10:20])
         self.assertEqual(h["content-range"], f"bytes 10-19/{n}")
-        st, _, body = req(self.port, "GET", "/decks/dk/01.mp4", {"Range": "bytes=-5"})
+        st, _, body = self.req("GET", "/decks/dk/01.mp4", {"Range": "bytes=-5"})
         self.assertEqual((st, body), (206, MP4[-5:]))
-        st, _, _ = req(self.port, "GET", "/decks/dk/01.mp4", {"Range": "bytes=500-600"})
+        st, _, _ = self.req("GET", "/decks/dk/01.mp4", {"Range": "bytes=500-600"})
         self.assertEqual(st, 416)
-        st, _, body = req(self.port, "GET", "/decks/dk/01.mp4")
+        st, _, body = self.req("GET", "/decks/dk/01.mp4")
         self.assertEqual((st, len(body)), (200, n))
 
     def test_traversal_blocked(self):
         secret = (H.PLUGIN_DIR / "plugin.yaml").read_bytes()
         for p in ("/../plugin.yaml", "/%2e%2e/plugin.yaml", "/decks/../../plugin.yaml",
                   "/decks/%2e%2e/%2e%2e/plugin.yaml", "/..%2fplugin.yaml", "/decks/..%5c..%5cplugin.yaml"):
-            st, _, body = req(self.port, "GET", p)
+            st, _, body = self.req("GET", p)
             self.assertIn(st, (400, 403, 404), p)
             self.assertNotEqual(body, secret, p)
 
     def test_server_json_not_served(self):
         for p in ("/data/server.json", "/decks/../data/server.json", "/decks/%2e%2e/data/server.json"):
-            st, _, body = req(self.port, "GET", p)
+            st, _, body = self.req("GET", p)
             self.assertNotIn(self.secret().encode(), body, p)
 
     def test_wrong_host_421(self):
-        st, _, _ = req(self.port, "GET", "/", host="evil.example.com")
+        st, _, _ = self.req("GET", "/", host="evil.example.com")
         self.assertEqual(st, 421)
-        st, _, _ = req(self.port, "GET", "/health", host="evil.example.com:80")
+        st, _, _ = self.req("GET", "/health", host="evil.example.com:80")
         self.assertEqual(st, 421)
-        st, _, _ = req(self.port, "GET", "/", host=f"localhost:{self.port}")
+        st, _, _ = self.req("GET", "/", host=f"localhost:{self.port}")
         self.assertEqual(st, 200)
 
     def test_post_results_same_origin(self):
         deck = core.build_deck(self.root, "D", ["a", "b"], deck_id="dk")
         ids = [c["id"] for c in deck["cards"]]
         body = json.dumps(H.results_payload("dk", ids, ["keep", "revise"])).encode()
-        st, _, out = req(self.port, "POST", "/api/swipe-results",
+        st, _, out = self.req("POST", "/api/swipe-results",
                          {"Origin": f"http://127.0.0.1:{self.port}", "Content-Type": "application/json"}, body)
         self.assertEqual(st, 200, out)
         self.assertEqual(json.loads(out)["decided"], 2)
-        st, _, out = req(self.port, "GET", "/api/verdicts/dk")
+        st, _, out = self.req("GET", "/api/verdicts/dk")
         self.assertEqual(st, 200)
         self.assertEqual(len(json.loads(out)["verdicts"]), 2)
         self.assertTrue(core.summarize(self.root, "dk")["complete"])
@@ -170,39 +180,39 @@ class LocalServerTests(ServerBase):
     def test_post_unknown_card_rejected(self):
         core.build_deck(self.root, "D", ["a"], deck_id="dk")
         body = json.dumps(H.results_payload("dk", ["dk-01", "forged"])).encode()
-        st, _, _ = req(self.port, "POST", "/api/swipe-results", {"Origin": f"http://127.0.0.1:{self.port}"}, body)
+        st, _, _ = self.req("POST", "/api/swipe-results", {"Origin": f"http://127.0.0.1:{self.port}"}, body)
         self.assertEqual(st, 400)
 
     def test_verdicts_reserved_name_rejected(self):
-        st, _, _ = req(self.port, "GET", "/api/verdicts/CON")
+        st, _, _ = self.req("GET", "/api/verdicts/CON")
         self.assertEqual(st, 400)
 
     def test_post_foreign_origin_rejected(self):
         body = json.dumps(H.results_payload("dk", ["dk-01"])).encode()
-        st, _, _ = req(self.port, "POST", "/api/swipe-results",
+        st, _, _ = self.req("POST", "/api/swipe-results",
                        {"Origin": "http://evil.example.com", "Content-Type": "application/json"}, body)
         self.assertEqual(st, 403)
         self.assertFalse((self.root / "data" / "verdicts" / "dk.json").exists())
 
     def test_post_bad_payloads(self):
         o = {"Origin": f"http://127.0.0.1:{self.port}"}
-        st, _, _ = req(self.port, "POST", "/api/swipe-results", o, b"not json")
+        st, _, _ = self.req("POST", "/api/swipe-results", o, b"not json")
         self.assertEqual(st, 400)
-        st, _, _ = req(self.port, "POST", "/api/swipe-results", o, b'{"schema":"x"}')
+        st, _, _ = self.req("POST", "/api/swipe-results", o, b'{"schema":"x"}')
         self.assertEqual(st, 400)
-        st, _, _ = req(self.port, "POST", "/other", o, b"{}")
+        st, _, _ = self.req("POST", "/other", o, b"{}")
         self.assertEqual(st, 404)
 
     def test_content_length_validated(self):
         o = {"Origin": f"http://127.0.0.1:{self.port}"}
         for bad in ("abc", "-5", "1e3", "12 34"):
-            st, _, _ = req(self.port, "POST", "/api/swipe-results", {**o, "Content-Length": bad})
+            st, _, _ = self.req("POST", "/api/swipe-results", {**o, "Content-Length": bad})
             self.assertEqual(st, 400, bad)
-        st, _, _ = req(self.port, "POST", "/api/swipe-results", {**o, "Content-Length": str(srv.MAX_BODY + 1)})
+        st, _, _ = self.req("POST", "/api/swipe-results", {**o, "Content-Length": str(srv.MAX_BODY + 1)})
         self.assertEqual(st, 413)
 
     def test_methods(self):
-        st, _, _ = req(self.port, "PUT", "/", body=b"")
+        st, _, _ = self.req("PUT", "/", body=b"")
         self.assertEqual(st, 405)
 
     def test_request_timeout_set(self):
@@ -363,7 +373,7 @@ class LanServerTests(ServerBase):
     lan = True
 
     def cookie(self):
-        return {"Cookie": f"{srv.COOKIE}={self.secret()}"}
+        return self.auth()
 
     def test_requires_cookie_not_query_token(self):
         self.assertTrue(self.info["lan"])
@@ -384,14 +394,15 @@ class LanServerTests(ServerBase):
         self.assertEqual(st, 302)
         self.assertEqual(h["location"], "/")
         cookie = h["set-cookie"]
-        for part in ("HttpOnly", "SameSite=Strict", "Path=/", "Max-Age=2592000", f"{srv.COOKIE}={self.secret()}"):
+        for part in ("HttpOnly", "SameSite=Lax", "Path=/", "Max-Age=2592000", f"{srv.cookie_name(self.root)}="):
             self.assertIn(part, cookie)
+        self.assertNotIn(self.secret(), cookie)  # each browser gets its own token, never the secret
         st, _, body = req(self.port, "GET", "/", {"Cookie": cookie.split(";")[0]})
         self.assertEqual(st, 200)
         self.assertEqual(body, (H.BOARD_DIR / "index.html").read_bytes())
         st, _, _ = req(self.port, "GET", path)  # second use
         self.assertEqual(st, 403)
-        st, _, _ = req(self.port, "GET", "/", {"Cookie": f"{srv.COOKIE}=bad"})
+        st, _, _ = req(self.port, "GET", "/", {"Cookie": f"{srv.cookie_name(self.root)}=bad"})
         self.assertEqual(st, 401)
 
     def test_pair_wrong_code(self):
@@ -411,12 +422,13 @@ class LanServerTests(ServerBase):
         st, _, _ = req(self.port, "POST", "/api/swipe-results", self.cookie(), body)
         self.assertEqual(st, 200)
 
-    def test_loopback_browser_needs_no_cookie(self):
+    def test_loopback_browser_needs_the_cookie_too(self):
+        # A proxy or port forward on this computer would make anyone look local.
         with mock.patch.object(srv, "LOOPBACK", {"127.0.0.1"}):
             st, _, _ = req(self.port, "GET", "/")
-            self.assertEqual(st, 200)
-            st, _, _ = req(self.port, "GET", "/", host="192.0.2.5:80")  # a non-local Host still needs the cookie
             self.assertEqual(st, 401)
+            st, _, _ = req(self.port, "GET", "/", self.cookie())
+            self.assertEqual(st, 200)
 
     def test_second_process_mints_code_over_loopback(self):
         second = srv.BoardServer(self.root, H.BOARD_DIR)
@@ -448,8 +460,9 @@ class LanServerTests(ServerBase):
     def test_lan_off_has_no_pair_link(self):
         local = srv.BoardServer(self.tmp / "other", H.BOARD_DIR)
         self.addCleanup(local.stop)
-        local.ensure(port=H.free_port(), lan=False)
+        info = local.ensure(port=H.free_port(), lan=False)
         self.assertIsNone(local.pair_url())
+        self.assertTrue(local.pair_url(local=True).startswith(f"http://127.0.0.1:{info['port']}/pair?c="))
 
 
 if __name__ == "__main__":

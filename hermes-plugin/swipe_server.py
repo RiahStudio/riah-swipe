@@ -5,20 +5,26 @@
     GET  /decks/...             deck files and their media (byte ranges supported)
     POST /api/swipe-results     the board's verdict sink -> <root>/data/{results,verdicts}/
     GET  /api/verdicts/<deck>   verdicts stored for a deck
-    GET  /health                liveness; with ?n=<nonce> also an HMAC proof of the secret
-    GET  /pair?c=<code>         (phone mode) trade a one-time pairing code for a cookie
-    POST /api/pair-code         (phone mode) mint a pairing code; loopback + X-Swipe-Secret only
+    GET  /health                liveness; from this computer, ?n=<nonce> adds an HMAC proof of the secret
+    GET  /pair?c=<code>         trade a one-time sign-in code for this browser's own cookie
+    POST /api/pair-code         mint a sign-in code; this computer + X-Swipe-Secret only
 
-Local mode (default) binds 127.0.0.1 and only answers Host headers that name
-this machine (DNS-rebinding guard). Phone mode (lan, or a non-loopback `bind`)
-listens on the network and needs a cookie on every request, except from a
-browser on this same computer. The cookie holds a long-lived secret kept in
-data/server.json; a phone gets it by opening a one-time pairing link.
+Every browser signs in once, desktop and phone alike: Hermes hands out a link with a
+one-time code (10 minutes), and opening it gives that browser its own random token in
+a cookie. Only a hash of each token is kept (data/devices.json), and `/swipe unpair`
+signs every browser out. Local mode (default) binds 127.0.0.1 and only answers Host
+headers that name this machine (DNS-rebinding guard). Phone mode (lan, or a
+non-loopback `bind`) listens on the network over plain HTTP.
+
+data/server.json holds a separate long-lived secret that never leaves this computer:
+Hermes processes use it to prove a running board is theirs and to mint codes.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
+import html as htmllib
 import ipaddress
 import json
 import logging
@@ -41,7 +47,9 @@ logger = logging.getLogger(__name__)
 
 APP = "riah-swipe"
 VERSION = "0.1.0"
-COOKIE = "swipe_t"
+COOKIE = "swipe_t"  # the cookie name is COOKIE + "_" + the first 8 of the root id (two profiles, two cookies)
+COOKIE_MAX_AGE = 30 * 24 * 3600
+MAX_DEVICES = 50
 MAX_BODY = 16 * 1024 * 1024
 MAX_CONNECTIONS = 32
 REQUEST_TIMEOUT = 15
@@ -51,7 +59,7 @@ LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]", "::1"}
 LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}  # client addresses that count as "this computer"
 SECRET_HEADER = "X-Swipe-Secret"
 
-CSP_DEFAULT = "frame-ancestors 'none'"
+CSP_DEFAULT = "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 CSP_MEDIA = "sandbox; default-src 'none'; frame-ancestors 'none'"
 
 MIME = {
@@ -133,6 +141,110 @@ def hmac_hex(secret: str, nonce: str) -> str:
     return hmac.new(secret.encode("utf-8"), nonce.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+def cookie_name(root: Path) -> str:
+    return f"{COOKIE}_{root_id(root)[:8]}"
+
+
+_INLINE_SCRIPT = re.compile(r"<script>(.*?)</script>", re.S | re.I)
+_INLINE_HANDLER = re.compile(r'\son[a-z]+\s*=\s*"([^"]*)"', re.I)
+
+
+def _csp_hash(text: str) -> str:
+    text = text.replace("\r\n", "\n").replace("\r", "\n")  # what the browser hashes after parsing
+    return "'sha256-" + base64.b64encode(hashlib.sha256(text.encode("utf-8")).digest()).decode("ascii") + "'"
+
+
+def board_csp(board: Path) -> str:
+    """script-src 'self' plus the hashes of the board page's own inline scripts, so nothing
+    else can run on the page even if a deck field ever slipped past the escaping."""
+    try:
+        page = (Path(board) / "index.html").read_text("utf-8")
+    except OSError:
+        return CSP_DEFAULT
+    srcs = ["'self'"] + [_csp_hash(body) for body in _INLINE_SCRIPT.findall(page)]
+    handlers = [_csp_hash(htmllib.unescape(v)) for v in _INLINE_HANDLER.findall(page)]
+    if handlers:
+        srcs += ["'unsafe-hashes'"] + handlers
+    return f"script-src {' '.join(dict.fromkeys(srcs))}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+
+
+class Devices:
+    """Signed-in browsers. Each gets its own random token; only its SHA-256 is kept, in
+    data/devices.json, so a copy of the data folder signs nobody in. Tokens expire after
+    COOKIE_MAX_AGE, and clear() signs everyone out. Re-read when the file changes, so a
+    sign-out from another Hermes process takes effect at once."""
+
+    def __init__(self, root: Path, clock=time.time):
+        self.path = Path(root) / "data" / "devices.json"
+        self.lock_path = Path(root) / "data" / "devices.lock"
+        self._clock = clock
+        self._seen = None
+        self._rows: list[dict] = []
+        self._guard = threading.Lock()
+
+    @staticmethod
+    def _hash(token: str) -> str:
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    def _load(self) -> list[dict]:
+        data = core.read_json(self.path, None)
+        rows = data.get("devices") if isinstance(data, dict) else None
+        if not isinstance(rows, list):
+            return []
+        return [r for r in rows if isinstance(r, dict) and isinstance(r.get("h"), str)]
+
+    def _live(self, rows: list[dict]) -> list[dict]:
+        cutoff = self._clock() - COOKIE_MAX_AGE
+        return [r for r in rows if isinstance(r.get("at"), (int, float)) and r["at"] > cutoff]
+
+    def _current(self) -> list[dict]:
+        try:
+            st = self.path.stat()
+            sig = (st.st_mtime_ns, st.st_size, st.st_ino)
+        except OSError:
+            sig = None
+        with self._guard:
+            if sig != self._seen:
+                self._rows = self._load() if sig else []
+                self._seen = sig
+            return self._rows
+
+    def check(self, token: str) -> bool:
+        if not token:
+            return False
+        h = self._hash(token).encode("ascii")
+        ok = False
+        for r in self._live(self._current()):  # compare against all, no early exit
+            if hmac.compare_digest(r["h"].encode("ascii", "replace"), h):
+                ok = True
+        return ok
+
+    def _write(self, rows: list[dict]) -> None:
+        core.atomic_write_json(self.path, {"devices": rows})
+        try:
+            os.chmod(self.path, 0o600)
+        except OSError:
+            pass
+
+    def add(self) -> str:
+        token = secrets.token_urlsafe(32)
+        with core.file_lock(self.lock_path):
+            rows = self._live(self._load())
+            rows.append({"h": self._hash(token), "at": self._clock()})
+            self._write(rows[-MAX_DEVICES:])
+        return token
+
+    def count(self) -> int:
+        return len(self._live(self._current()))
+
+    def clear(self) -> int:
+        """Sign every browser out. Returns how many were signed in."""
+        with core.file_lock(self.lock_path):
+            n = len(self._live(self._load()))
+            self._write([])
+        return n
+
+
 class PairCodes:
     """One-time pairing codes: valid PAIR_TTL seconds, single use."""
 
@@ -172,6 +284,9 @@ class PairCodes:
 
 def _make_handler(root: Path, board: Path, secret: str, lan: bool, codes: PairCodes, on_results=None):
     rid = root_id(root)
+    cookie = cookie_name(root)
+    devices = Devices(root)
+    csp_board = board_csp(board)
     decks_dir = (root / "decks").resolve()
     board_dir = board.resolve()
     deck_locks: dict[str, threading.Lock] = {}
@@ -229,19 +344,38 @@ def _make_handler(root: Path, board: Path, secret: str, lan: bool, codes: PairCo
         def _peer(self) -> str:
             return str(self.client_address[0])
 
-        def _is_local_browser(self) -> bool:
-            return self._peer() in LOOPBACK and self._host_name() in LOCAL_HOSTS
+        def _from_this_computer(self) -> bool:
+            """The connection comes from this machine (loopback, or the address we listen on)."""
+            if self._peer() in LOOPBACK:
+                return True
+            try:
+                return self._peer() == str(self.request.getsockname()[0])
+            except OSError:
+                return False
 
         def _authed(self) -> bool:
-            if not lan:
-                return True
-            if self._is_local_browser():
-                return True
+            """A browser that signed in with a one-time link. No exceptions for loopback:
+            a proxy or port forward on this computer would make anyone look local."""
             for part in (self.headers.get("cookie") or "").split(";"):
                 k, _, v = part.strip().partition("=")
-                if k == COOKIE and v and hmac.compare_digest(v.encode("utf-8"), secret.encode("utf-8")):
+                if k == cookie and v and devices.check(v):
                     return True
             return False
+
+        def _signed_out(self) -> None:
+            msg = "This browser isn't signed in to Riah Swipe. Type /swipe in Hermes for a fresh link."
+            if self.command in ("GET", "HEAD") and not self.path.startswith(("/api/", "/decks/")):
+                body = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
+                        f"<title>Riah Swipe</title><p style='font:16px system-ui;margin:2em'>{msg}</p>").encode("utf-8")
+                self.send_response(401)
+                self.send_header("content-type", "text/html; charset=utf-8")
+                self.send_header("cache-control", "no-store")
+                self.send_header("content-length", str(len(body)))
+                self.end_headers()
+                if self.command != "HEAD":
+                    self.wfile.write(body)
+                return
+            self._json(401, {"error": msg})
 
         def _read_body(self) -> bytes | None:
             """The request body, or None after sending an error."""
@@ -276,6 +410,8 @@ def _make_handler(root: Path, board: Path, secret: str, lan: bool, codes: PairCo
                 return self._json(403, {"error": "forbidden"})
             if target.is_dir():
                 target = target / "index.html"
+            if base == board_dir and target.name == "index.html":
+                self._csp = csp_board
             try:
                 st = target.stat()
             except OSError:
@@ -354,11 +490,17 @@ def _make_handler(root: Path, board: Path, secret: str, lan: bool, codes: PairCo
                 self.end_headers()
                 return
             code = (query.get("c") or [""])[0]
-            if not code or not codes.redeem(code):
-                return self._json(403, {"error": "that pairing link expired or was already used; ask Hermes for a new one"})
+            fresh = bool(code) and codes.redeem(code)
+            if not fresh and not self._authed():
+                return self._json(403, {"error": "that sign-in link expired or was already used; "
+                                                 "type /swipe in Hermes for a new one"})
             self.send_response(302)
             self.send_header("location", "/")
-            self.send_header("set-cookie", f"{COOKIE}={secret}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000")
+            if fresh:
+                # Lax, not Strict: the link is usually opened from a chat app, and Strict would
+                # drop the cookie on the redirect that follows. Writes are still same-origin only.
+                self.send_header("set-cookie", f"{cookie}={devices.add()}; Path=/; HttpOnly; SameSite=Lax; "
+                                               f"Max-Age={COOKIE_MAX_AGE}")
             self.send_header("content-length", "0")
             self.send_header("cache-control", "no-store")
             self.end_headers()
@@ -367,12 +509,7 @@ def _make_handler(root: Path, board: Path, secret: str, lan: bool, codes: PairCo
             raw = self._read_body()
             if raw is None:
                 return
-            sock_addr = ""
-            try:
-                sock_addr = str(self.request.getsockname()[0])
-            except OSError:
-                pass
-            if self._peer() not in LOOPBACK and self._peer() != sock_addr:
+            if not self._from_this_computer():
                 return self._json(403, {"error": "pairing codes are minted from this computer only"})
             given = self.headers.get(SECRET_HEADER) or ""
             if not given or not hmac.compare_digest(given.encode("utf-8"), secret.encode("utf-8")):
@@ -393,15 +530,15 @@ def _make_handler(root: Path, board: Path, secret: str, lan: bool, codes: PairCo
             if path == "/health":
                 out = {"ok": True, "app": APP, "version": VERSION, "rootId": rid, "lan": lan}
                 nonce = (query.get("n") or [""])[0]
-                if nonce:
+                if nonce and self._from_this_computer():  # only Hermes on this machine needs the proof
                     out["hmac"] = hmac_hex(secret, nonce[:200])
                 return self._json(200, out)
-            if lan and path == "/pair":
+            if path == "/pair":
                 return self._pair(query)
-            if lan and path == "/api/pair-code" and self.command == "POST":
+            if path == "/api/pair-code" and self.command == "POST":
                 return self._pair_code()
             if not self._authed():
-                return self._json(401, {"error": "open the phone link Hermes gave you (it pairs this device once)"})
+                return self._signed_out()
 
             if self.command == "POST":
                 origin = self.headers.get("origin")
@@ -664,7 +801,7 @@ class BoardServer:
         if self._httpd and self._codes:
             return self._codes.mint()
         info, st = self.info, self._state
-        if not info or not info.get("lan") or not st:
+        if not info or not st:
             return None
         host = self._probe_host(st["host"])
         url_host = f"[{host}]" if ":" in host else host
@@ -679,15 +816,29 @@ class BoardServer:
             logger.debug("riah-swipe: pair-code request failed", exc_info=True)
             return None
 
-    def pair_url(self) -> str | None:
-        """Link to hand to a phone: opens once, sets the cookie, lands on the board."""
+    def pair_url(self, local: bool = False) -> str | None:
+        """A one-time sign-in link: it gives the browser that opens it its own cookie and
+        lands on the board. local=True is for a browser on this computer; otherwise it's the
+        phone link (phone mode only)."""
         info = self.info
-        if not info or not info.get("lan") or not info.get("phone_host"):
+        if not info:
+            return None
+        if local:
+            base = info.get("local_url")
+        elif info.get("lan") and info.get("phone_host"):
+            base = f"http://{info['phone_host']}:{info['port']}/"
+        else:
+            base = None
+        if not base:
             return None
         code = self.mint_pair_code()
         if not code:
             return None
-        return f"http://{info['phone_host']}:{info['port']}/pair?c={code}"
+        return f"{base}pair?c={code}"
+
+    def unpair(self) -> int:
+        """Sign every browser out (desktop and phone). Returns how many were signed in."""
+        return Devices(self.root).clear()
 
     def stop(self) -> None:
         if self._httpd:
