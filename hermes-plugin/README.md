@@ -13,12 +13,29 @@ right in the chat with buttons, and you can talk back with voice notes.
 
 ## Install
 
+You need Hermes 0.21.5 or newer (0.22.5 or newer for swiping right inside
+Telegram). Then:
+
 ```bash
-hermes plugins install riah-swipe
+hermes plugins install RiahStudio/riah-swipe/hermes-plugin
+hermes plugins enable riah-swipe
 ```
 
-That's it. The board ships inside the plugin and needs no build step, Node, or
-extra Python packages.
+Keep the `/hermes-plugin` on the end. The plugin lives in that folder of the
+repo, and plain `RiahStudio/riah-swipe` installs the whole repo instead, which
+Hermes can't load.
+
+The board ships inside the plugin and needs no build step, Node, or extra
+Python packages.
+
+To check it worked, run:
+
+```bash
+hermes swipe status
+```
+
+You should see a board link and "No decks yet". `hermes swipe serve` opens
+the empty board, if you'd like to see it before Hermes makes your first deck.
 
 ## Using it
 
@@ -35,8 +52,12 @@ it (see below), Hermes posts your verdicts back into the chat as soon as you
 finish the deck; otherwise they reach it with your next message. If you change
 a verdict after that, Hermes hears about the change once, too.
 
-To let finished decks show up in Telegram, Discord and other chats on their
-own, add this to `config.yaml` and restart the gateway:
+The gateway is the part of Hermes that talks to Telegram, Discord and other
+chat apps. Hermes doesn't let plugins post into those chats unless you say so.
+To let Riah Swipe post your verdicts back into the chat when you finish a deck,
+add this to Hermes' `config.yaml` (it's a Hermes permission, so it sits next to
+the plugin's name, not under its `settings`) and restart the gateway with
+`hermes gateway restart`:
 
 ```yaml
 plugins:
@@ -45,6 +66,7 @@ plugins:
       allow_gateway_injection: true
 ```
 
+It only ever sends one short summary, and only to the chat that made the deck.
 Without it nothing breaks; Hermes just picks up your verdicts the next time
 you send it a message.
 
@@ -71,12 +93,14 @@ is open in that chat. Commands like `/swipe` always pass through to Hermes.
 Type `/swipe stop` to stop swiping in the chat; what you've swiped is saved and
 the rest stay on the board.
 
-Voice notes are turned into text with Hermes' own speech-to-text, so set that
-up first. The audio clip is kept with the deck too.
+Voice notes are turned into text with Hermes' own speech-to-text, the same
+one that lets Hermes understand voice messages. If Hermes already understands
+your voice messages, you're set. The audio clip is kept with the deck too.
 
-Swiping in chat needs a Hermes recent enough to let plugins add Telegram
-buttons. On older versions, other chat apps, or with `chat_swipe: false`,
-Hermes sends the board link as before.
+Swiping in chat needs Hermes 0.22.5 or newer, with plugins running inside
+Hermes (`plugins.isolation: in_process`, which is the default). On older
+versions, with `plugins.isolation: host`, in other chat apps, or with `chat_swipe: false`,
+Hermes sends the board link instead.
 
 You can also type `/swipe` to get the board link and see how recent decks are
 going, or run `hermes swipe serve` to open the board on its own.
@@ -124,7 +148,7 @@ There are two hooks:
   other chats, commands, photos, a reply to some other message, any chat with
   no open deck) passes through untouched. A deck left alone for 30 minutes
   stops catching notes. Swiping in chat needs plugins loaded in-process (the
-  default); in isolated host mode Hermes doesn't let plugins add Telegram
+  default); with `plugins.isolation: host` Hermes doesn't let plugins add Telegram
   buttons, so you get the board link instead.
 
 ## Settings
@@ -204,8 +228,9 @@ Everything stays on your computer. Specifically:
 
 ## Developing
 
-The board lives in `../board/` in the source repo. This folder carries a copy,
-because the catalog installs only `hermes-plugin/`. After changing the board:
+This part is only for people changing the plugin's code. The board lives in
+`../board/` in the source repo. This folder carries a copy, because Hermes
+installs only `hermes-plugin/`. After changing the board:
 
 ```bash
 node scripts/sync-hermes-board.mjs

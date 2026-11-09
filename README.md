@@ -15,6 +15,19 @@ good ones is the slow part. Riah Swipe turns that into a card stack: drop a batc
 Verdicts are saved as plain JSON, and an **MCP server** lets Claude Code, Codex, Hermes, or any
 MCP client read the board and record verdicts too. Free, MIT-licensed, zero runtime dependencies.
 
+### Using Hermes?
+
+There's a Hermes plugin. Hermes makes the deck, you swipe it (on Telegram, right in the chat
+with Keep / Cut / Redo buttons and optional voice notes), and Hermes gets your verdicts back.
+
+```bash
+hermes plugins install RiahStudio/riah-swipe/hermes-plugin
+hermes plugins enable riah-swipe
+```
+
+Setup, Telegram and phone mode: **[hermes-plugin/README.md](hermes-plugin/README.md)**. You
+don't need Node or the quick start below for the plugin.
+
 ## Why
 
 - Reviewing 40 images in a chat window is miserable; swiping them takes a minute.
