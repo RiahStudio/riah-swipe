@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 PLATFORM = "telegram"
 CALLBACK_RE = re.compile(r"^rs:([kcrus]):([0-9a-f]{8}):(\d{1,4})$")
 TOAST = {"keep": "Kept", "discard": "Cut", "revise": "Redo: send a voice note", "undo": "Undone",
-         "send": "Sent to Hermes"}
+         "send": "Done"}
 REFUSED = {"not_yours": "This deck belongs to someone else in this chat.",
            "stale": "Already counted.", "gone": "That deck isn't open here any more.",
            "nothing_to_undo": "Nothing to undo yet."}
@@ -197,10 +197,10 @@ class TelegramSwipe:
                 self._schedule_finish(session)  # before drawing, so a failed draw can't strand it
             else:
                 self._cancel_finish(key)
-            await self._render_quietly(session)
             if out.get("decision") == "send":
-                await self._done(session)
-            elif session.get("status") == "finishing":
+                session = await self._done(session)  # first, so the card can say where the verdicts went
+            await self._render_quietly(session)
+            if out.get("decision") != "send" and session.get("status") == "finishing":
                 self._schedule_finish(session)  # the wait starts once the card is on screen
 
     async def _render_quietly(self, session: dict) -> None:
@@ -291,14 +291,24 @@ class TelegramSwipe:
             session = await asyncio.to_thread(cs.finish, root, key, token)
             if not session:
                 return
+            session = await self._done(session)
             await self._render_quietly(session)
-            await self._done(session)
 
-    async def _done(self, session: dict) -> None:
+    async def _done(self, session: dict) -> dict:
+        """Hand the finished deck to Hermes. on_done returns True when Hermes was told straight
+        away; otherwise the verdicts wait for the person's next message, and the card says so."""
+        delivered = False
         try:
-            await asyncio.to_thread(self.on_done, session["deck_id"])
+            delivered = bool(await asyncio.to_thread(self.on_done, session["deck_id"]))
         except Exception:
             logger.warning("riah-swipe: handing the finished deck to Hermes failed", exc_info=True)
+        try:
+            fresh = await asyncio.to_thread(cs.set_delivery, self.root_fn(), session["key"],
+                                            session["token"], delivered)
+        except Exception:
+            logger.info("riah-swipe: could not record how the deck was delivered", exc_info=True)
+            fresh = None
+        return fresh or session
 
     # ------------------------------------------------------------------ drawing
 

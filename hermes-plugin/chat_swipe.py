@@ -316,6 +316,19 @@ def set_notice(root: Path, key: str, token: str, notice: str) -> dict | None:
     return _update(root, fn)
 
 
+def set_delivery(root: Path, key: str, token: str, delivered: bool) -> dict | None:
+    """Record whether Hermes was told straight away ("sent") or picks the verdicts up with the
+    person's next message ("next_message"), so the finished card says which."""
+    def fn(chats):
+        s = chats.get(key)
+        if not s or s.get("token") != token:
+            return None
+        s["delivery"] = "sent" if delivered else "next_message"
+        return dict(s)
+
+    return _update(root, fn)
+
+
 def finish(root: Path, key: str, token: str) -> dict | None:
     """Mark a finishing deck as sent; returns the session if this call did it (so it runs once)."""
     def fn(chats):
@@ -377,6 +390,8 @@ def view(root: Path, session: dict) -> dict:
             if last:
                 lines.append(f"Send a voice note to add to “{card_title(root, session['deck_id'], last)}”, "
                              "or tap Send.")
+        elif status == "sent" and session.get("delivery") == "next_message":
+            lines.append(f"Done: {tally}. Hermes gets these with your next message.")
         elif status == "sent":
             lines.append(f"Sent to Hermes: {tally}.")
         else:

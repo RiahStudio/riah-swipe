@@ -164,11 +164,16 @@ class LayerBase(unittest.IsolatedAsyncioTestCase):
         self.tmp = Path(self._td.name)
         self.root = core.ensure_root(self.tmp / "data")
         self.done = []
-        self.layer = ct.TelegramSwipe(lambda: self.root, self.done.append, lambda k, d: d)
+        self.delivered = True  # what on_done reports: True = Hermes was told straight away
+        self.layer = ct.TelegramSwipe(lambda: self.root, self._on_done, lambda k, d: d)
         self.layer.finish_delay = lambda: 0.05
         self.bot = FakeBot()
         self.app = FakeApp(self.bot)
         self.layer.factory(self.app, None)
+
+    def _on_done(self, deck_id):
+        self.done.append(deck_id)
+        return self.delivered
 
     def deck(self, kinds="iii", deck_id="dk"):
         cards = []
@@ -242,6 +247,28 @@ class WiringTests(LayerBase):
 
 
 class TapFlowTests(LayerBase):
+    async def test_card_says_next_message_when_hermes_could_not_be_told(self):
+        self.delivered = False  # e.g. allow_gateway_injection is off
+        self.layer.finish_delay = lambda: 5.0  # tap Send before the wait runs out
+        await self.start("i")
+        await self.press("k")
+        q = await self.press("s")
+        self.assertEqual(q.answers[0][0], "Done")
+        self.assertEqual(self.done, ["dk"])
+        caption = self.bot.last()["caption"]
+        self.assertIn("Done: 1 keep, 0 redo, 0 cut. Hermes gets these with your next message.", caption)
+        self.assertNotIn("Sent to Hermes", caption)
+        self.assertEqual(self.session()["delivery"], "next_message")
+
+    async def test_card_says_next_message_after_the_grace_period_too(self):
+        self.delivered = False
+        await self.start("i")
+        await self.press("k")
+        await until(lambda: self.session()["status"] == "sent" and self.session().get("delivery"))
+        await until(lambda: "next message" in (self.bot.last().get("caption") or ""))
+        self.assertIn("Hermes gets these with your next message", self.bot.last()["caption"])
+
+
     async def test_three_shirts_keep_redo_cut_then_send(self):
         await self.start()
         first_id = self.session()["message_id"]
@@ -449,6 +476,7 @@ class TgCtx:
         self.config = config or {}
         self.tools, self.hooks, self.commands, self.cli, self.unload = [], [], [], [], []
         self.factories, self.injected = [], []
+        self.accept = True  # False = Hermes refuses the push (allow_gateway_injection off)
 
     def register_tool(self, **kw):
         self.tools.append(kw)
@@ -473,7 +501,7 @@ class TgCtx:
 
     def inject_message(self, content, role="user", *, session_key=None, origin=None):
         self.injected.append((content, session_key))
-        return True
+        return self.accept
 
 
 @contextlib.contextmanager
@@ -546,6 +574,27 @@ class PluginWiringTests(unittest.IsolatedAsyncioTestCase):
         content, skey = self.ctx.injected[0]
         self.assertTrue(content.startswith(plugin.BRIEF_HEADER))
         self.assertEqual(skey, "agent:main:telegram:dm:100")
+        await until(lambda: "Sent to Hermes" in (self.bot.last().get("caption") or ""))
+
+    async def test_refused_push_tells_the_person_to_message_hermes(self):
+        self.ctx.accept = False
+        self.ctx.factories[0](self.app, None)
+        out = await asyncio.to_thread(self.publish)
+        self.assertTrue(out.get("in_chat"), out)
+        layer = plugin._chat
+        layer.finish_delay = lambda: 0.05
+        key = cs.chat_key("telegram", CHAT, "")
+        root = plugin._root()
+        for _ in range(2):
+            s = cs.get(root, key)
+            m = Msg()
+            m.message_id = int(s["message_id"])
+            q = Query(f"rs:k:{s['token']}:{s['pos']}", m)
+            await layer.on_callback(types.SimpleNamespace(callback_query=q), None)
+        with telegram_turn():
+            await until(lambda: "next message" in (self.bot.last().get("caption") or ""))
+        self.assertEqual(len(self.ctx.injected), 1)
+        self.assertNotIn("Sent to Hermes", self.bot.last()["caption"])
 
     async def test_publish_falls_back_to_board_when_not_connected(self):
         out = await asyncio.to_thread(self.publish)

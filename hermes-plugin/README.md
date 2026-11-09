@@ -21,9 +21,8 @@ hermes plugins install RiahStudio/riah-swipe/hermes-plugin
 hermes plugins enable riah-swipe
 ```
 
-Keep the `/hermes-plugin` on the end. The plugin lives in that folder of the
-repo, and plain `RiahStudio/riah-swipe` installs the whole repo instead, which
-Hermes can't load.
+Plain `RiahStudio/riah-swipe` works too; it just downloads the whole repo
+instead of only the plugin's folder.
 
 The board ships inside the plugin and needs no build step, Node, or extra
 Python packages.
@@ -87,6 +86,9 @@ Notes are optional, on any card:
 - Redo asks for a note but never waits for one. Send nothing and keep going.
 - After the last card there's a short wait (20 seconds by default) for one more
   note, with a **Send** button to skip it. Then the verdicts go back to Hermes.
+  The card says "Sent to Hermes" if Hermes heard straight away, or "Hermes gets
+  these with your next message" if it isn't allowed to post into the chat yet
+  (see `allow_gateway_injection` above).
 
 Only the person who asked for the deck can tap the buttons or add notes, and only while a deck
 is open in that chat. Commands like `/swipe` always pass through to Hermes.

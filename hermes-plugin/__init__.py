@@ -684,28 +684,29 @@ def _may_be_due(row: dict) -> bool:
     return row.get("delivered_version") is not None and _age_days(row.get("at")) <= LEDGER_EXPIRY_DAYS
 
 
-def _on_results(deck_id: str, root: Path) -> None:
+def _on_results(deck_id: str, root: Path) -> bool:
     """Board thread, after the phone sent verdicts: push a finished deck to the chat it came from.
 
     Only in the process that published it from a messaging chat (the gateway), and only if the
-    host allows injection; otherwise the verdicts wait for the person's next message."""
+    host allows injection; otherwise the verdicts wait for the person's next message. Returns
+    True when Hermes has this version of the verdicts now (pushed here, or already delivered)."""
     inject = getattr(_ctx, "inject_message", None)
     if not callable(inject) or _ctx_call("session_surface") == "cli":
-        return
+        return False
     try:
         ledger = core.read_json(_ledger_path(root), {}) or {}
         row = (ledger.get("decks") or {}).get(deck_id)
         if not isinstance(row, dict) or not row.get("messaging") or row.get("pid") != os.getpid():
-            return
+            return False
         key = row.get("owner_key") or ""
         if not key:
-            return
+            return False
         s = core.summarize(root, deck_id)
         if not s["complete"]:
-            return
+            return False
         state, prev = _claim(deck_id, s.get("version"))
         if not state:
-            return
+            return bool(row.get("delivered"))  # not due: Hermes already has these verdicts
         content = (BRIEF_HEADER + "\n" + core.brief_line(s, updated=(state == "updated"))
                    + "\n(Sent automatically by the Riah Swipe plugin when the deck was finished.)")
         try:
@@ -715,8 +716,10 @@ def _on_results(deck_id: str, root: Path) -> None:
             sent = False
         if not sent:
             _unclaim(deck_id, prev)
+        return sent
     except Exception:
         logger.debug("riah-swipe: push failed", exc_info=True)
+        return False
 
 
 def on_pre_llm_call(session_id: str = "", parent_session_id: str = "", task_id: str = "", **kwargs: Any):
