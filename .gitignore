@@ -7,7 +7,7 @@ node_modules/
 *.log
 *.tmp
 # verdicts and results written by the server at runtime
-data/
+/data/
 examples/*/data/
 # your own decks (the bundled sample is allowed)
 decks/

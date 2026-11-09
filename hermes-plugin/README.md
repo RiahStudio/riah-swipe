@@ -1,0 +1,219 @@
+# Riah Swipe for Hermes
+
+Swipe through what your agent made.
+
+You ask Hermes for ten logo ideas, six taglines, or four cuts of a video. Hermes
+puts them in a swipe deck and hands you a link. Swipe right to keep, left to
+discard, and up to send one back with a note. When you finish the deck, Hermes
+has the verdicts and remakes the ones you sent back.
+
+It works on your desktop. Turn on phone mode and it works from your phone on the
+same Wi-Fi too. On Telegram you don't need the board at all: the cards show up
+right in the chat with buttons, and you can talk back with voice notes.
+
+## Install
+
+```bash
+hermes plugins install riah-swipe
+```
+
+That's it. The board ships inside the plugin and needs no build step, Node, or
+extra Python packages.
+
+## Using it
+
+Just ask in plain words:
+
+> Give me 8 names for my coffee cart and let me swipe on them.
+
+> Make four poster ideas for the bake sale, put them in Swipe, and redo whatever I send back.
+
+Hermes calls `swipe_publish`, gives you the board link, and waits. Swipe the
+deck. In the CLI, TUI and desktop app Hermes picks up your verdicts as soon as
+you finish. In a messaging chat it does not sit and wait. If the host allows
+it (see below), Hermes posts your verdicts back into the chat as soon as you
+finish the deck; otherwise they reach it with your next message. If you change
+a verdict after that, Hermes hears about the change once, too.
+
+To let finished decks show up in Telegram, Discord and other chats on their
+own, add this to `config.yaml` and restart the gateway:
+
+```yaml
+plugins:
+  entries:
+    riah-swipe:
+      allow_gateway_injection: true
+```
+
+Without it nothing breaks; Hermes just picks up your verdicts the next time
+you send it a message.
+
+### Swiping in Telegram
+
+When Hermes makes a deck from a Telegram chat, the deck appears in that chat as
+one message that flips from card to card. Each card has four buttons: **Keep**,
+**Cut**, **Redo** and **Undo**. The board link still works if you'd rather use
+it, and both stay in sync.
+
+Notes are optional, on any card:
+
+- After you tap a button, send a voice note or type a message, and it's
+  attached to the card you just decided. "Kept it, the blue one reads better"
+  or "Cut, the hands look wrong" both work.
+- Before your first tap, or right after Undo, a note goes with the card on
+  screen and is saved when you decide it.
+- Redo asks for a note but never waits for one. Send nothing and keep going.
+- After the last card there's a short wait (20 seconds by default) for one more
+  note, with a **Send** button to skip it. Then the verdicts go back to Hermes.
+
+Only the person who asked for the deck can tap the buttons or add notes, and only while a deck
+is open in that chat. Commands like `/swipe` always pass through to Hermes.
+Type `/swipe stop` to stop swiping in the chat; what you've swiped is saved and
+the rest stay on the board.
+
+Voice notes are turned into text with Hermes' own speech-to-text, so set that
+up first. The audio clip is kept with the deck too.
+
+Swiping in chat needs a Hermes recent enough to let plugins add Telegram
+buttons. On older versions, other chat apps, or with `chat_swipe: false`,
+Hermes sends the board link as before.
+
+You can also type `/swipe` to get the board link and see how recent decks are
+going, or run `hermes swipe serve` to open the board on its own.
+
+### Phone mode
+
+Set `lan: true` in the plugin's settings (Settings → Plugins → Riah Swipe, or
+`plugins.entries.riah-swipe.settings.lan` in `config.yaml`). The board then
+listens on your local network and Hermes gives you a pairing link
+(`/pair?c=...`). Open it on your phone. The link works once and expires after
+10 minutes. Your phone then keeps a cookie (good for 30 days) and stays signed
+in. If you ever need another phone, ask Hermes for a fresh link.
+
+Two optional settings help with more unusual setups:
+
+- `bind` picks the one network address the board listens on, instead of all of them.
+- `advertise_host` is the name or address that goes in the phone link.
+
+**Tailscale tip.** Set `advertise_host` to your PC's MagicDNS name (like
+`my-pc.your-tailnet.ts.net`) and set `bind` to the PC's Tailscale `100.x`
+address. The board is then reachable from your phone anywhere on your tailnet,
+and from nowhere else.
+
+**Windows Firewall.** The first time the board listens on your network,
+Windows may ask whether to let Python through, or may quietly block it. If your
+phone can't connect, allow inbound connections for Python on private networks.
+
+## Tools
+
+| Tool | What it does |
+|---|---|
+| `swipe_publish` | Makes a deck from a list of cards (text, image, video or audio) and returns the board link |
+| `swipe_status` | The board link and progress on recent decks |
+| `swipe_results` | Keep, revise (with your notes) and discard lists for one deck |
+| `swipe_wait` | Waits for you to finish a deck. Only in interactive sessions; returns at once anywhere else |
+
+There are two hooks:
+
+- `pre_llm_call`. When you finish a deck Hermes made in this session, the next
+  turn gets a short summary of your verdicts so Hermes can follow up without
+  being asked. It holds off during the last-note wait in Telegram.
+- `pre_gateway_dispatch`. While a deck is open in a Telegram chat, it catches a
+  voice note or typed note from the person swiping and attaches it to the
+  card, so it doesn't start a new Hermes turn. Everything else (other people,
+  other chats, commands, photos, a reply to some other message, any chat with
+  no open deck) passes through untouched. A deck left alone for 30 minutes
+  stops catching notes. Swiping in chat needs plugins loaded in-process (the
+  default); in isolated host mode Hermes doesn't let plugins add Telegram
+  buttons, so you get the board link instead.
+
+## Settings
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `lan` | `false` | Listen on your local network so a phone can open the board |
+| `bind` | empty | Network address to listen on. Empty means this computer only, or all networks when `lan` is on |
+| `advertise_host` | empty | Host name or address to put in the phone link. Empty means your PC's local network address |
+| `port` | `8137` | First port to try. If it's taken, the next free one (up to +19) is used |
+| `media_dirs` | empty | Extra folders Hermes may copy local media from, separated by commas (or a list) |
+| `chat_swipe` | `true` | Show decks made in Telegram right in the chat, with buttons |
+| `chat_finish_delay` | `20` | Seconds to wait after the last card for one more note (3 to 300) |
+
+Local media is copied only from your working folder (unless that is your home
+folder), Hermes' own image, audio and video caches, the temp folder, and any
+folder in `media_dirs`. A card pointing anywhere else is refused with a message
+saying which setting to change.
+
+## Disclosure
+
+Everything stays on your computer. Specifically:
+
+- **A local web server.** The first `swipe_publish` (or `/swipe`, or
+  `hermes swipe serve`) starts a small HTTP server on a background thread
+  inside the Hermes process. It stops when Hermes exits. By default it binds
+  `127.0.0.1` only and refuses requests whose `Host` header is not a local
+  name, which blocks DNS-rebinding pages.
+- **Phone mode listens on your network.** With `lan: true` the server binds
+  `0.0.0.0` (or the single address in `bind`) and is reachable from your local
+  network. Every request from another device needs a cookie holding a long
+  random secret (`secrets.token_urlsafe(32)`). The secret never appears in tool
+  output or links. Instead Hermes gives you a one-time pairing link
+  (`/pair?c=...`, single use, 10 minutes) that sets the cookie (HttpOnly,
+  SameSite=Strict, 30 days). Codes are compared in constant time. POSTs must
+  come from the board's own origin. The server also caps open connections,
+  times out slow clients, limits request sizes, and sends headers that stop
+  the board being framed or sniffed. Uploaded media is served in a sandbox.
+  To find your LAN address it opens a UDP socket toward a reserved test address
+  (192.0.2.1); no packet is sent.
+- **Media checks.** Local files are copied only if their type is on the list
+  (no SVG) and their first bytes match that type. A deck can hold at most 1 GB
+  of copied media. Remote media must be `https://`.
+- **Files it writes.** Everything goes in the plugin's own data folder
+  (`$HERMES_HOME/plugin-data/riah-swipe/`): decks, your verdicts, a small
+  session ledger, and `data/server.json`, which records the running server's
+  port and the board's persistent secret (a random value created on first run,
+  readable only by you on systems that support it). It lets a second Hermes
+  process reuse the same board, after proving it holds the secret, instead of
+  starting another. It is kept across restarts so paired phones stay signed in.
+  Swiping in Telegram adds `data/chat-swipe.json` (which deck is open in which
+  chat, and the card message's id) and copies of your voice notes in
+  `data/chat-notes/`.
+- **Files it reads.** When a card points at a local image, video or audio file,
+  that one file is copied into the deck folder so the board can show it, and
+  only if it sits inside an allowed folder (the working folder unless it is
+  your home folder, Hermes' media caches, the temp folder, or `media_dirs`).
+  For a voice note sent while swiping, it reads the copy Hermes already
+  downloaded. It reads nothing else outside its data folder.
+- **Messages it sends.** With `allow_gateway_injection: true`, when you finish
+  a deck that Hermes made in a chat, the plugin hands that chat one short
+  summary of your verdicts through Hermes' own `inject_message`. It goes only
+  to the chat that made the deck, once per change, and never from the CLI. Remote `http(s)` media links are
+  passed to the board as-is; your browser loads them, the plugin does not.
+  Verdict notes are treated as plain data: trimmed, stripped of control
+  characters, and shown to Hermes labeled as data, not instructions.
+- **Telegram messages.** Swiping in chat sends, edits and deletes only the one
+  card message in the chat that made the deck, through Hermes' own connected
+  bot. It sends card media you gave it (a local file, or an `https://` link
+  Telegram fetches). Voice notes go through Hermes' speech-to-text, which may
+  use whatever provider you set up there.
+- **No other outbound network calls, no telemetry, no accounts, no credentials.**
+- **No background processes.** The server is a thread, not a separate process.
+- **Waiting for a person.** `swipe_wait` only blocks in interactive surfaces
+  (CLI, TUI, desktop, ACP), never longer than 15 minutes, and returns
+  immediately under cron, the gateway, or a headless run.
+
+## Developing
+
+The board lives in `../board/` in the source repo. This folder carries a copy,
+because the catalog installs only `hermes-plugin/`. After changing the board:
+
+```bash
+node scripts/sync-hermes-board.mjs
+python -m unittest discover -s hermes-plugin/tests -t hermes-plugin
+```
+
+The tests are standard library only and talk to loopback only. The Telegram
+tests use `python-telegram-bot` (which Hermes already ships) and skip if it
+isn't installed.
+
+MIT licensed. Made by Riah Studio.

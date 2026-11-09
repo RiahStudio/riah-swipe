@@ -1,0 +1,76 @@
+name: riah-swipe
+version: "0.1.0"
+manifest_version: 2
+api_version: 1
+requires_hermes: ">=0.21.5"
+label: Riah Swipe
+description: >-
+  Swipe through what your agent made. Hermes puts a batch of options (images, video,
+  audio, names, taglines, script pages) into a swipe deck; you swipe right to keep,
+  left to discard, up to revise with a note, on your desktop or your phone. Hermes
+  gets the verdicts back and regenerates the ones you sent back for revision. On
+  Telegram you can swipe right in the chat with Keep, Cut and Redo buttons, and add a
+  voice or typed note to any card.
+author: Riah Studio
+license: MIT
+homepage: https://github.com/RiahStudio/riah-swipe
+tags: [review, images, creative, phone, feedback, telegram, voice]
+provides_tools:
+  - swipe_publish
+  - swipe_status
+  - swipe_results
+  - swipe_wait
+provides_hooks:
+  - pre_llm_call
+  - pre_gateway_dispatch
+config_schema:
+  lan:
+    type: bool
+    default: false
+    label: Swipe from my phone
+    description: >-
+      Listen on your local network so a phone on the same Wi-Fi can open the board.
+      Your phone opens a one-time pairing link once; after that it stays signed in with a
+      cookie. Nobody on the network can open the board without that.
+  bind:
+    type: string
+    default: ""
+    label: Bind address
+    description: >-
+      Which network address the board listens on. Leave empty for the default (this computer
+      only, or all networks when phone mode is on). Set it to one address, such as a Tailscale
+      100.x address, to keep the board off other networks.
+  advertise_host:
+    type: string
+    default: ""
+    label: Phone link host
+    description: >-
+      The name or address to put in the phone link, such as the PC's Tailscale MagicDNS name.
+      Leave empty to use the PC's local network address.
+  port:
+    type: int
+    default: 8137
+    label: Board port
+    description: First port to try for the board server (the next free one is used if it is taken).
+  media_dirs:
+    type: string
+    default: ""
+    label: Extra media folders
+    description: >-
+      Folders Hermes may copy local images, video and audio from, separated by commas.
+      The working folder, Hermes' media caches and the temp folder are always allowed.
+  chat_swipe:
+    type: bool
+    default: true
+    label: Swipe in Telegram
+    description: >-
+      When a deck is published from a Telegram chat, show the cards right in that chat with
+      Keep, Cut, Redo and Undo buttons instead of only sending a board link. After any tap
+      you can send a voice note or a typed note to say why.
+  chat_finish_delay:
+    type: int
+    default: 20
+    label: Last-note wait (seconds)
+    description: >-
+      After the last card, how long to wait for one more note before the verdicts go back to
+      Hermes. Tapping Send skips the wait. Between 3 and 300.
