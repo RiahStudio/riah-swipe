@@ -98,8 +98,11 @@ Notes are optional, on any card:
 
 **Several decks in a row.** If Hermes makes another deck while you're still
 swiping, it waits its turn and shows up in the chat when you finish the one on
-screen. The card tells you how many are waiting. A deck you walked away from
-for 10 minutes gives way to the next one; its cards stay on the board.
+screen. The card tells you how many are waiting. Finish a deck on the board
+instead and the chat moves on to the next one by itself. If you walked away
+from a deck for 10 minutes, the next deck Hermes makes takes its place in the
+chat (ahead of any that were already waiting); the cards you left stay on the
+board. Up to 20 decks can wait; past that a new deck comes as a board link.
 
 **Redo rounds.** When Hermes remakes the cards you sent back, the new deck is
 marked "round 2" and each remade card shows what you asked for ("You said:
@@ -108,7 +111,8 @@ marked "round 2" and each remade card shows what you asked for ("You said:
 Only the person who asked for the deck can tap the buttons or add notes, and only while a deck
 is open in that chat. Commands like `/swipe` always pass through to Hermes.
 Type `/swipe stop` to stop swiping in the chat; what you've swiped is saved and
-the rest stay on the board.
+the rest stay on the board. Decks that were waiting their turn leave the chat
+too, and are still on the board.
 
 Voice notes are turned into text with Hermes' own speech-to-text, the same
 one that lets Hermes understand voice messages. If Hermes already understands

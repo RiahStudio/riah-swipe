@@ -445,6 +445,123 @@ class TelegramDailyTests(T.LayerBase):
         await T.until(lambda: self.session()["status"] == "sent")
         self.assertEqual(self.done, ["dk"])
 
+    def said(self):
+        return [str(kw.get("text") or kw.get("caption") or "") for _n, kw in self.bot.calls]
+
+    async def test_a_remade_card_shows_what_you_said_in_the_chat(self):
+        self.deck("t")
+        core.set_verdict(self.root, "dk", "dk-01", "revise", "make the hat red")
+        core.build_deck(self.root, "Shirts", [{"title": "Hat again", "text": "x", "replaces": "1"}],
+                        deck_id="dk-r2", redo_of="dk")
+        out = await asyncio.to_thread(self.layer.start_deck, "dk-r2", T.CHAT, T.USER, "")
+        self.assertTrue(out["ok"], out)
+        text = self.bot.last()["text"]
+        self.assertIn("You said: “make the hat red”", text)
+        self.assertIn("round 2", text)
+
+    async def test_the_middle_deck_done_on_the_board_is_passed_over(self):
+        self.layer.finish_delay = lambda: 5.0
+        await self.open_two()
+        self.deck("t", "dk3")
+        third = await asyncio.to_thread(self.layer.start_deck, "dk3", T.CHAT, T.USER, "")
+        self.assertEqual(third["queued"], 2)
+        core.set_verdict(self.root, "dk2", "dk2-01", "keep")
+        await self.press("k")
+        await self.press("s")
+        s = self.session()
+        self.assertEqual((s["deck_id"], s["status"], s["queue"]), ("dk3", "active", []))
+
+    async def test_finishing_on_the_board_brings_up_the_deck_that_was_waiting(self):
+        self.layer.finish_delay = lambda: 5.0
+        await self.open_two("tt")
+        await self.press("k")
+        await self.layer.on_dispatch(T.event("love this one"))  # lands on the card just kept
+        await self.layer.on_dispatch(T.event("and this"))
+        core.set_verdict(self.root, "dk", "dk-02", "discard")  # the last card, swiped on the board
+        self.layer.board_finished("dk", True)
+        await T.until(lambda: (self.session() or {}).get("deck_id") == "dk2")
+        self.assertEqual(self.session()["status"], "active")
+        self.assertEqual(self.done, [])  # the board already told Hermes; the chat doesn't say it twice
+        self.assertTrue(any("Finished on the board." in t and "Sent to Hermes" in t for t in self.said()),
+                        self.said()[-4:])
+        self.assertEqual(self.verdicts()["dk-02"]["decision"], "discard")
+
+    async def test_the_board_changing_one_card_does_not_end_the_chat_deck(self):
+        await self.open_two("tt")
+        core.set_verdict(self.root, "dk", "dk-02", "keep")  # one card on the board, one still open
+        self.layer.board_finished("dk", False)
+        await asyncio.sleep(0.2)
+        s = self.session()
+        self.assertEqual((s["deck_id"], s["status"], len(s["queue"])), ("dk", "active", 1))
+
+    async def test_a_full_line_leaves_the_deck_on_the_board(self):
+        with mock.patch.object(cs, "MAX_QUEUE", 1):
+            first, second = await self.open_two()
+            self.assertEqual(second["queued"], 1)
+            self.deck("t", "dk3")
+            third = await asyncio.to_thread(self.layer.start_deck, "dk3", T.CHAT, T.USER, "")
+        self.assertFalse(third["ok"])
+        self.assertIn("waiting", third["reason"])
+        s = self.session()
+        self.assertEqual((s["deck_id"], [e["deck"] for e in s["queue"]]), ("dk", ["dk2"]))
+        self.assertTrue(cs.still_open(self.root, "dk3"))  # still there to swipe on the board
+
+
+class BoardFinishTests(Base):
+    def test_a_note_typed_before_the_board_swipe_is_kept(self):
+        s = self.open(n=1)
+        self.assertTrue(cs.add_note(self.root, s["key"], USER, "too busy")["held"])
+        self.assertEqual(cs.close_finished(self.root, "dk"), [])  # nothing decided yet
+        core.set_verdict(self.root, "dk", "dk-01", "revise", "")
+        closed = cs.close_finished(self.root, "dk")
+        self.assertEqual([(c["status"], c["held"]) for c in closed], [("sent", "")])
+        self.assertEqual(self.verdicts()["dk-01"]["note"], "too busy")
+        self.assertEqual(cs.close_finished(self.root, "dk"), [])  # once
+
+    def test_a_deck_waiting_for_its_last_note_is_left_alone(self):
+        s = self.open(n=1)
+        self.tap(s, "k")
+        self.assertEqual(cs.close_finished(self.root, "dk"), [])
+        self.assertEqual(cs.get(self.root, s["key"])["status"], "finishing")
+
+    def test_the_line_never_grows_past_its_limit(self):
+        s = self.open()
+        with mock.patch.object(cs, "MAX_QUEUE", 2):
+            for i in (2, 3):
+                self.deck(1, f"dk{i}")
+                self.assertEqual(cs.open_session(self.root, f"dk{i}", "telegram", "100", USER)["queued"], i - 1)
+            self.deck(1, "dk4")
+            self.assertEqual(cs.open_session(self.root, "dk4", "telegram", "100", USER)["queued"], 0)
+        self.assertEqual([e["deck"] for e in cs.get(self.root, s["key"])["queue"]], ["dk2", "dk3"])
+
+
+class QueueHandlerTests(TH.HandlerBase):
+    def one_card(self, chat):
+        with mock.patch.object(plugin, "_start_in_chat", return_value=chat):
+            return json.loads(plugin.handle_publish(
+                {"title": "T", "cards": [{"title": "a", "text": "t"}]}, session_id="s1"))
+
+    def test_publish_says_when_the_deck_is_waiting_its_turn(self):
+        out = self.one_card({"ok": True, "key": "k", "queued": 2})
+        self.assertTrue(out["ok"], out)
+        self.assertEqual((out["in_chat"], out["queued"]), (True, 2))
+        self.assertIn("next in line", out["tell_the_person"])
+        self.assertIn("Don't resend", out["agent_note"])
+
+    def test_publish_gives_the_board_link_when_the_line_is_full(self):
+        out = self.one_card({"ok": False, "reason": "too many decks are already waiting in this chat"})
+        self.assertTrue(out["ok"], out)
+        self.assertNotIn("in_chat", out)
+        self.assertIn("waiting", out["chat_swipe_unavailable"])
+        self.assertIn("ready to swipe: http", out["tell_the_person"])
+
+    def test_the_board_tells_the_chat_when_verdicts_arrive(self):
+        seen = []
+        fake = types.SimpleNamespace(board_finished=lambda d, delivered=False: seen.append((d, delivered)))
+        with mock.patch.object(plugin, "_chat", fake):
+            self.assertFalse(plugin._board_results("nope", plugin._root()))
+        self.assertEqual(seen, [("nope", False)])
+
 
 if __name__ == "__main__":
     unittest.main()

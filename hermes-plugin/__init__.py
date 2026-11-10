@@ -140,7 +140,7 @@ def _server_for(root: Path) -> BoardServer:
     with _server_lock:
         server = _servers.get(key)
         if server is None:
-            server = _servers[key] = BoardServer(root, BOARD_DIR, on_results=lambda d: _on_results(d, root))
+            server = _servers[key] = BoardServer(root, BOARD_DIR, on_results=lambda d: _board_results(d, root))
         return server
 
 
@@ -767,6 +767,18 @@ def _on_results(deck_id: str, root: Path) -> bool:
     except Exception:
         logger.debug("riah-swipe: push failed", exc_info=True)
         return False
+
+
+def _board_results(deck_id: str, root: Path) -> bool:
+    """Board thread: tell Hermes about a finished deck, then let the chat catch up (a deck
+    finished on the board frees the chat for the next one waiting)."""
+    delivered = _on_results(deck_id, root)
+    if _chat is not None:
+        try:
+            _chat.board_finished(deck_id, delivered)
+        except Exception:
+            logger.debug("riah-swipe: the chat could not catch up with the board", exc_info=True)
+    return delivered
 
 
 def on_pre_llm_call(session_id: str = "", parent_session_id: str = "", task_id: str = "", **kwargs: Any):

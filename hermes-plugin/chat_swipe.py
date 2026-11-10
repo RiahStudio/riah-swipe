@@ -453,6 +453,38 @@ def finish(root: Path, key: str, token: str) -> dict | None:
     return _update(root, fn)
 
 
+def close_finished(root: Path, deck_id: str) -> list[dict]:
+    """The rest of a deck was swiped on the board while its card was still up in a chat: that
+    chat is done with it too. Returns the sessions this call closed (so each closes once). A note
+    typed for the card on screen and not yet attached goes onto that card's verdict."""
+    root = core.ensure_root(root)
+
+    def fn(chats):
+        closed: list[dict] = []
+        if still_open(root, deck_id):
+            return closed
+        for s in chats.values():
+            if not isinstance(s, dict) or s.get("deck_id") != deck_id or s.get("status") != "active":
+                continue
+            order, pos = s.get("order") or [], s.get("pos") or 0
+            if (s.get("held") or s.get("held_audio")) and pos < len(order):
+                v = _verdicts(root, deck_id).get(order[pos]) or {}
+                if v.get("decision") in core.DECISIONS:
+                    audio = (list(v.get("audio") or []) if isinstance(v.get("audio"), list) else []) \
+                        + list(s.get("held_audio") or [])
+                    core.set_verdict(root, deck_id, order[pos], v["decision"],
+                                     _join_note(v.get("note", ""), s.get("held") or ""),
+                                     via="chat", extra={"audio": audio} if audio else None)
+            s["held"], s["held_audio"] = "", []
+            s["status"] = "sent"
+            s["notice"] = "Finished on the board."
+            s["touched"] = core.now_iso()
+            closed.append(dict(s))
+        return closed
+
+    return _update(root, fn)
+
+
 def stop(root: Path, key: str, token: str | None = None) -> dict | None:
     """Stop swiping in this chat (only the session with `token`, when given). Decks waiting in
     line are dropped from the chat too; they stay on the board."""

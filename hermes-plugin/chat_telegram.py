@@ -137,7 +137,9 @@ class TelegramSwipe:
         root = self.root_fn()
         session = await asyncio.to_thread(cs.open_session, root, deck_id, PLATFORM, chat_id, user_id,
                                           thread_id, queue)
-        if session.get("queued"):  # the person is mid-deck: this one waits its turn
+        if "queued" in session:  # the person is mid-deck: this one waits its turn
+            if not session["queued"]:  # the line is full: the deck stays on the board
+                return {"ok": False, "reason": "too many decks are already waiting in this chat"}
             showing = session["session"]
             async with self._lock_for(showing["key"]):
                 await self._render_quietly(showing)  # the card now says another deck is waiting
@@ -169,12 +171,44 @@ class TelegramSwipe:
                 head, line = line[0], line[1:]
                 if not await asyncio.to_thread(cs.still_open, root, head["deck"]):
                     continue  # swiped on the board meanwhile, or gone
-                await self._open_and_send(head["deck"], session["chat_id"],
-                                          head.get("user") or session.get("user_id"),
-                                          session.get("thread_id") or "", line)
+                try:
+                    await self._open_and_send(head["deck"], session["chat_id"],
+                                              head.get("user") or session.get("user_id"),
+                                              session.get("thread_id") or "", line)
+                except Exception:  # this one wouldn't post (it stays on the board): try the one behind it
+                    logger.warning("riah-swipe: could not start the next deck in line", exc_info=True)
+                    continue
                 return
         except Exception:
             logger.warning("riah-swipe: could not start the next deck in line", exc_info=True)
+
+    def board_finished(self, deck_id: str, delivered: bool = False) -> None:
+        """Called from the board's thread when verdicts arrive there. If that finished a deck whose
+        card is still up in a chat, the card says so and the next deck in line goes up."""
+        loop = self.loop
+        if not self.ready() or loop is None or loop.is_closed():
+            return
+
+        async def go():
+            try:
+                root = self.root_fn()
+                for session in await asyncio.to_thread(cs.close_finished, root, deck_id):
+                    if session.get("platform") != PLATFORM:
+                        continue
+                    key = session["key"]
+                    async with self._lock_for(key):
+                        self._cancel_finish(key)
+                        fresh = await asyncio.to_thread(cs.set_delivery, root, key, session["token"],
+                                                        bool(delivered))
+                        await self._render_quietly(fresh or session)
+                    await self._start_next(session)
+            except Exception:
+                logger.warning("riah-swipe: could not close a deck finished on the board", exc_info=True)
+
+        try:
+            asyncio.run_coroutine_threadsafe(go(), loop)
+        except RuntimeError:
+            pass
 
     def redraw_soon(self, session: dict) -> None:
         """Redraw a chat's card from any thread (e.g. after /swipe stop); fire and forget."""
