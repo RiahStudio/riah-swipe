@@ -530,7 +530,7 @@ class PluginWiringTests(unittest.IsolatedAsyncioTestCase):
         self._td = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)  # a redraw thread may still hold the lock file on Windows
         self.addCleanup(self._td.cleanup)
         self.tmp = Path(self._td.name)
-        env = mock.patch.dict(os.environ, {"SWIPE_ROOT": str(self.tmp / "data")})
+        env = mock.patch.dict(os.environ, {"RIAH_SWIPE_PLUGIN_ROOT": str(self.tmp / "data")})
         env.start()
         self.addCleanup(env.stop)
         os.environ.pop("HERMES_PLATFORM", None)
@@ -731,7 +731,7 @@ class ReviewFixTests(LayerBase):
 
 class OldHermesTests(unittest.TestCase):
     def test_no_telegram_hook_means_no_chat_layer(self):
-        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"SWIPE_ROOT": td}):
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"RIAH_SWIPE_PLUGIN_ROOT": td}):
             ctx = TgCtx()
             del TgCtx.register_telegram_handler
             try:
@@ -747,7 +747,7 @@ class OldHermesTests(unittest.TestCase):
     def test_no_session_surface_means_no_chat_layer(self):
         # register_telegram_handler alone (0.21.6-0.22.2) isn't enough: the chat layer is
         # only switched on where ctx.session_surface exists too (0.22.3+), which we tested.
-        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"SWIPE_ROOT": td}):
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"RIAH_SWIPE_PLUGIN_ROOT": td}):
             ctx = TgCtx()
             del TgCtx.session_surface
             try:

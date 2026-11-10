@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import tempfile
 import threading
 import time
@@ -57,11 +58,16 @@ _server_lock = threading.Lock()
 
 
 def _root() -> Path:
+    # RIAH_SWIPE_PLUGIN_ROOT wins when set, so the tests never write into a real Hermes
+    # folder, even when they run with Hermes' own Python (where plugin_storage imports).
+    override = os.environ.get("RIAH_SWIPE_PLUGIN_ROOT")
+    if override:
+        return core.ensure_root(Path(override))
     try:
         from plugins.plugin_storage import plugin_data_dir
 
         return core.ensure_root(plugin_data_dir(PLUGIN))
-    except Exception:  # running outside Hermes (tests, `python -m`)
+    except Exception:  # running outside Hermes (`python -m`)
         base = os.environ.get("SWIPE_ROOT") or str(Path.home() / ".hermes" / "plugin-data" / PLUGIN)
         return core.ensure_root(Path(base))
 
@@ -371,11 +377,33 @@ def _hermes_home() -> Path:
         return Path(os.environ.get("HERMES_HOME") or (Path.home() / ".hermes"))
 
 
+def _temp_dirs() -> list[Path]:
+    """The temp folder as this process sees it, plus the computer's usual one.
+
+    Hermes points TMPDIR/TMP/TEMP at its own scratch folder, so tempfile.gettempdir() alone
+    misses the place most image and video generators write to."""
+    dirs = [Path(tempfile.gettempdir())]
+    if os.name == "nt":
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            dirs.append(Path(local) / "Temp")
+    else:
+        dirs += [Path("/tmp"), Path("/var/tmp")]
+        if sys.platform == "darwin":
+            try:
+                mac = os.confstr("CS_DARWIN_USER_TEMP_DIR")
+            except (ValueError, OSError):
+                mac = None
+            if mac:
+                dirs.append(Path(mac))
+    return dirs
+
+
 def _media_roots() -> list[Path]:
     """Folders swipe_publish may copy local media from.
 
     The working folder (unless it is the home folder or a drive root), Hermes' own media
-    caches, the temp folder, the plugin's data, and anything listed in settings.media_dirs."""
+    caches, the temp folders, the plugin's data, and anything listed in settings.media_dirs."""
     roots: list[Path] = []
     cwd = _session_cwd()
     if cwd is not None:
@@ -386,7 +414,7 @@ def _media_roots() -> list[Path]:
         if cwd != home and cwd.parent != cwd:
             roots.append(cwd)
     roots += [_hermes_home() / d for d in HERMES_MEDIA_DIRS]
-    roots += [Path(tempfile.gettempdir()), _root()]
+    roots += _temp_dirs() + [_root()]
     extra = _setting("media_dirs", []) or []
     if isinstance(extra, str):
         extra = [part for chunk in extra.split(os.pathsep) for part in chunk.split(",")]

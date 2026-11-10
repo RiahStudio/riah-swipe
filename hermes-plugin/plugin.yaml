@@ -58,7 +58,7 @@ config_schema:
     label: Extra media folders
     description: >-
       Folders Hermes may copy local images, video and audio from, separated by commas.
-      The working folder, Hermes' media caches and the temp folder are always allowed.
+      The working folder, Hermes' media caches and the temp folders are always allowed.
   chat_swipe:
     type: bool
     default: true

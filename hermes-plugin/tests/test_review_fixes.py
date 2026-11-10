@@ -434,6 +434,32 @@ class MediaRootsPluginTests(HandlerBase):
         self.ctx.config["media_dirs"] = [str(a)]
         self.assertIn(str(a.resolve()), [str(p) for p in plugin._media_roots()])
 
+    def test_real_temp_folder_is_a_root_when_hermes_moves_tmpdir(self):
+        # Hermes points TMPDIR/TMP/TEMP at its own scratch folder in every process.
+        scratch = (self.tmp / "scratch").resolve()
+        scratch.mkdir()
+        old = tempfile.tempdir
+        tempfile.tempdir = str(scratch)
+        self.addCleanup(lambda: setattr(tempfile, "tempdir", old))
+        roots = plugin._media_roots()
+        self.assertIn(scratch, roots)
+        if os.name == "nt":
+            real = Path(os.environ["LOCALAPPDATA"]) / "Temp"
+        else:
+            real = Path("/tmp")
+        self.assertIn(real.resolve(), roots)
+
+    def test_refusal_names_a_folder_that_works(self):
+        far = Path(tempfile.mkdtemp(dir=str(Path.home())))
+        self.addCleanup(lambda: __import__("shutil").rmtree(far, ignore_errors=True))
+        (far / "x.png").write_bytes(PNG)
+        work = (self.tmp / "work2").resolve()
+        work.mkdir()
+        self.ctx.session_cwd = lambda: str(work)
+        out = json.loads(plugin.handle_publish({"title": "T", "cards": [{"title": "a", "image": str(far / "x.png")}]}))
+        self.assertFalse(out["ok"])
+        self.assertIn(str(work), out["error"])
+
     def test_home_folder_is_not_a_default_root(self):
         home = Path.home().resolve()
         self.ctx.session_cwd = lambda: str(home)

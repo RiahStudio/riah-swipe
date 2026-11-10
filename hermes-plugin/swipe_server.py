@@ -51,6 +51,7 @@ COOKIE = "swipe_t"  # the cookie name is COOKIE + "_" + the first 8 of the root 
 COOKIE_MAX_AGE = 30 * 24 * 3600
 MAX_DEVICES = 50
 MAX_BODY = 16 * 1024 * 1024
+DRAIN_MAX = 256 * 1024  # a refused request's body is read up to this size before the reply
 MAX_CONNECTIONS = 32
 REQUEST_TIMEOUT = 15
 PAIR_TTL = 600  # seconds a pairing code stays valid
@@ -316,7 +317,26 @@ def _make_handler(root: Path, board: Path, secret: str, lan: bool, codes: PairCo
 
         # ---------------------------------------------------------- helpers
 
+        def _drain(self) -> None:
+            """Read a small unread request body before answering.
+
+            Closing a socket that still holds unread data resets the connection on Windows,
+            so the browser would see a network error instead of our status code (a 401
+            that tells the person to sign in again, for one)."""
+            if self._body_read or self.headers.get("transfer-encoding"):
+                return
+            cl = (self.headers.get("content-length") or "0").strip()
+            if not re.fullmatch(r"[0-9]{1,12}", cl) or int(cl) > DRAIN_MAX:
+                return
+            try:
+                if int(cl):
+                    self.rfile.read(int(cl))
+                self._body_read = True
+            except OSError:
+                pass
+
         def _json(self, code: int, obj, headers: dict | None = None) -> None:
+            self._drain()
             body = json.dumps(obj).encode("utf-8")
             self.send_response(code)
             self.send_header("content-type", "application/json")

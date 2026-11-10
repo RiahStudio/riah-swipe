@@ -442,7 +442,8 @@ class TelegramDailyTests(T.LayerBase):
             chats[self.key]["touched"] = ago(minutes=20)
         cs._update(self.root, age)
         self.layer._rearm()
-        await T.until(lambda: self.session()["status"] == "sent")
+        await T.until(lambda: self.done)  # the status flips to sent a beat before Hermes is told
+        self.assertEqual(self.session()["status"], "sent")
         self.assertEqual(self.done, ["dk"])
 
     def said(self):

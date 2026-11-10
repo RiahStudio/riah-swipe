@@ -339,8 +339,10 @@ def _place_media(src: str, root: Path, deck_id: str, stem: str, budget: dict | N
     path = path.resolve()
     # Checked before anything touches the file, so nothing leaks about files outside.
     if allowed_roots is not None and not is_within(path, allowed_roots):
-        raise SwipeError(f"{src} is outside the folders Riah Swipe may copy media from. Move it into "
-                         "the working folder, or add its folder to "
+        here = [str(r) for r in allowed_roots if Path(r).is_dir()][:3]
+        where = f"one of these folders ({', '.join(here)})" if here else "the working folder"
+        raise SwipeError(f"{src} is outside the folders Riah Swipe may copy media from. Copy it into "
+                         f"{where} and publish again, or add its folder to "
                          "plugins.entries.riah-swipe.settings.media_dirs")
     if not path.is_file():
         raise SwipeError(f"media file not found: {src}")

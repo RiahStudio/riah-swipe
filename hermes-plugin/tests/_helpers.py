@@ -1,6 +1,6 @@
 """Shared test helpers: load the hyphen-named plugin folder as the package `hermes_plugin`.
 
-Stdlib only. Never touches ~/.hermes (tests set SWIPE_ROOT to a temp dir).
+Stdlib only. Never touches ~/.hermes (tests set RIAH_SWIPE_PLUGIN_ROOT to a temp dir).
 """
 import importlib.util
 import os

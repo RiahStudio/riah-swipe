@@ -12,3 +12,6 @@ examples/*/data/
 # your own decks (the bundled sample is allowed)
 decks/
 !examples/sample/decks/
+# Python caches from running the plugin tests
+__pycache__/
+.pytest_cache/

@@ -200,9 +200,10 @@ There are two hooks:
 | `chat_finish_delay` | `30` | Seconds to wait after the last card for one more note (3 to 300). The wait is longer after a Redo with no note yet |
 
 Local media is copied only from your working folder (unless that is your home
-folder), Hermes' own image, audio and video caches, the temp folder, and any
-folder in `media_dirs`. A card pointing anywhere else is refused with a message
-saying which setting to change.
+folder), Hermes' own image, audio and video caches, the temp folders (Hermes'
+own and your computer's usual one, where most image and video makers save), and
+any folder in `media_dirs`. A card pointing anywhere else is refused with a
+message naming a folder that works and the setting to change.
 
 ## Disclosure
 
@@ -252,7 +253,7 @@ Everything stays on your computer. Specifically:
 - **Files it reads.** When a card points at a local image, video or audio file,
   that one file is copied into the deck folder so the board can show it, and
   only if it sits inside an allowed folder (the working folder unless it is
-  your home folder, Hermes' media caches, the temp folder, or `media_dirs`).
+  your home folder, Hermes' media caches, the temp folders, or `media_dirs`).
   For a voice message sent as a note while swiping, it reads the copy Hermes
   already downloaded. It reads nothing else outside its data folder.
 - **Messages it sends.** With `allow_gateway_injection: true`, when you finish

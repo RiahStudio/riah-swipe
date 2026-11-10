@@ -75,7 +75,7 @@ class HandlerBase(unittest.TestCase):
         self._td = tempfile.TemporaryDirectory()
         self.addCleanup(self._td.cleanup)
         self.tmp = Path(self._td.name)
-        env = mock.patch.dict(os.environ, {"SWIPE_ROOT": str(self.tmp / "data")})
+        env = mock.patch.dict(os.environ, {"RIAH_SWIPE_PLUGIN_ROOT": str(self.tmp / "data")})
         env.start()
         self.addCleanup(env.stop)
         os.environ.pop("HERMES_PLATFORM", None)
