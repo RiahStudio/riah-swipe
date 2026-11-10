@@ -116,7 +116,10 @@ too, and are still on the board.
 
 Voice notes are turned into text with Hermes' own speech-to-text, the same
 one that lets Hermes understand voice messages. If Hermes already understands
-your voice messages, you're set. The audio clip is always kept with the deck.
+your voice messages, you're set. If it never has, set that up first (run
+`hermes tools` and pick Local Whisper under Speech-to-Text, which is free), or
+your first voice notes are kept as clips without the words. The audio clip is
+always kept with the deck.
 If the words can't be made out, the card says so and the clip is still saved
 with your verdict, so nothing you said is lost; type the note too if you want
 Hermes to read it. A card whose picture or video won't load in the chat is
