@@ -78,6 +78,7 @@ class TapTests(Base):
 
     def test_old_token_is_gone_after_a_new_deck_opens_in_the_chat(self):
         s = self.open()
+        cs.stop(self.root, s["key"])  # a deck still being swiped would make the next one wait in line
         self.deck(2, "dk2")
         cs.open_session(self.root, "dk2", "telegram", "100", USER)
         self.assertEqual(cs.tap(self.root, s["key"], s["token"], 0, "k", USER)["reason"], "gone")

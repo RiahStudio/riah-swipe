@@ -23,8 +23,13 @@ logger = logging.getLogger(__name__)
 
 PLATFORM = "telegram"
 CALLBACK_RE = re.compile(r"^rs:([kcrus]):([0-9a-f]{8}):(\d{1,4})$")
-TOAST = {"keep": "Kept", "discard": "Cut", "revise": "Redo: send a voice note", "undo": "Undone",
+TOAST = {"keep": "Kept", "discard": "Cut", "revise": "Redo: say what should change", "undo": "Undone",
          "send": "Done"}
+LISTENING = "Listening to your voice note…"
+NO_MEDIA = "(This card's file wouldn't load in the chat. It's on the board.)"
+TRANSCRIBE_TIMEOUT = 90.0  # a voice note that takes longer is kept as a clip, without text
+REDO_WAIT_FACTOR = 6  # after a Redo on the last card, wait this many times longer for the note
+MAX_FINISH_WAIT = 300.0  # must stay under chat_swipe.FINISH_WINDOW_SECONDS
 REFUSED = {"not_yours": "This deck belongs to someone else in this chat.",
            "stale": "Already counted.", "gone": "That deck isn't open here any more.",
            "nothing_to_undo": "Nothing to undo yet."}
@@ -44,6 +49,7 @@ class TelegramSwipe:
         self._gen: dict[str, int] = {}  # bumped on every schedule/cancel, so a stale timer does nothing
         self._chat_locks: dict[str, asyncio.Lock] = {}
         self._drawn: dict[str, Any] = {}  # chat key -> card id the message shows now
+        self._bad_media: set[tuple[str, str]] = set()  # (deck id, card id) whose file Telegram refused
 
     # ------------------------------------------------------------------ wiring
 
@@ -61,11 +67,17 @@ class TelegramSwipe:
             self.loop.call_soon(self._rearm)
 
     def _rearm(self) -> None:
-        """After a gateway restart, decks that were waiting for a last note still get sent."""
+        """After a gateway restart, decks that were waiting for a last note still get sent: the
+        wait starts over for recent ones, and ones whose wait already ran out go now."""
         try:
-            for session in cs.finishing_sessions(self.root_fn()):
+            root = self.root_fn()
+            for session in cs.finishing_sessions(root):
                 if session.get("platform") == PLATFORM and session["key"] not in self._timers:
                     self._schedule_finish(session)
+            loop = self.loop
+            for session in cs.overdue_sessions(root):
+                if session.get("platform") == PLATFORM and loop is not None:
+                    loop.create_task(self._auto_finish(session["key"], session["token"]))
         except Exception:
             logger.info("riah-swipe: could not re-arm finished decks", exc_info=True)
 
@@ -80,9 +92,9 @@ class TelegramSwipe:
 
     def finish_delay(self) -> float:
         try:
-            return max(3.0, min(300.0, float(self.setting("chat_finish_delay", 20))))
+            return max(3.0, min(MAX_FINISH_WAIT, float(self.setting("chat_finish_delay", 30))))
         except (TypeError, ValueError):
-            return 20.0
+            return 30.0
 
     # ------------------------------------------------------------------ start (tool thread)
 
@@ -120,10 +132,22 @@ class TelegramSwipe:
                 raise
             return {"ok": False, "reason": f"{type(e).__name__}: {e}"[:200]}
 
-    async def _open_and_send(self, deck_id: str, chat_id: Any, user_id: Any, thread_id: Any) -> dict:
+    async def _open_and_send(self, deck_id: str, chat_id: Any, user_id: Any, thread_id: Any,
+                             queue: list | None = None) -> dict:
         root = self.root_fn()
-        session = await asyncio.to_thread(cs.open_session, root, deck_id, PLATFORM, chat_id, user_id, thread_id)
+        session = await asyncio.to_thread(cs.open_session, root, deck_id, PLATFORM, chat_id, user_id,
+                                          thread_id, queue)
+        if session.get("queued"):  # the person is mid-deck: this one waits its turn
+            showing = session["session"]
+            async with self._lock_for(showing["key"]):
+                await self._render_quietly(showing)  # the card now says another deck is waiting
+            return {"ok": True, "key": showing["key"], "queued": session["queued"]}
         async with self._lock_for(session["key"]):
+            old = session.pop("replaced", None)
+            if old and old.get("message_id"):  # a deck left open here: its card stops taking taps
+                self._cancel_finish(old["key"])
+                await self._render_quietly({**old, "status": "stopped"})
+                self._drawn.pop(session["key"], None)
             try:
                 await self._render(session, fresh=True)
             except BaseException:
@@ -132,6 +156,25 @@ class TelegramSwipe:
             if session.get("status") == "finishing":  # everything was already decided on the board
                 self._schedule_finish(session)
         return {"ok": True, "key": session["key"]}
+
+    async def _start_next(self, session: dict) -> None:
+        """A deck was just sent: if others were waiting in this chat, the next one goes up."""
+        try:
+            root = self.root_fn()
+            nxt = await asyncio.to_thread(cs.take_next, root, session["key"], session["token"])
+            if not nxt:
+                return
+            line = [{"deck": nxt["deck"], "user": nxt["user"]}] + list(nxt["rest"])
+            while line:
+                head, line = line[0], line[1:]
+                if not await asyncio.to_thread(cs.still_open, root, head["deck"]):
+                    continue  # swiped on the board meanwhile, or gone
+                await self._open_and_send(head["deck"], session["chat_id"],
+                                          head.get("user") or session.get("user_id"),
+                                          session.get("thread_id") or "", line)
+                return
+        except Exception:
+            logger.warning("riah-swipe: could not start the next deck in line", exc_info=True)
 
     def redraw_soon(self, session: dict) -> None:
         """Redraw a chat's card from any thread (e.g. after /swipe stop); fire and forget."""
@@ -166,11 +209,22 @@ class TelegramSwipe:
         q = getattr(update, "callback_query", None)
         if q is None:
             return
+        try:
+            sent = await self._on_tap(q)
+        except Exception:
+            logger.warning("riah-swipe: a button tap failed", exc_info=True)
+            await _answer(q, "Something went wrong. Tap again.")  # never leave the button spinning
+            return
+        if sent:
+            await self._start_next(sent)
+
+    async def _on_tap(self, q: Any) -> dict | None:
+        """Handle one button press. Returns the session when this tap sent the deck to Hermes."""
         m = CALLBACK_RE.match(str(getattr(q, "data", "") or ""))
         msg = getattr(q, "message", None)
         if not m or msg is None:
             await _answer(q, REFUSED["gone"])
-            return
+            return None
         action, token, pos = m.group(1), m.group(2), int(m.group(3))
         chat_id = getattr(getattr(msg, "chat", None), "id", None) or getattr(msg, "chat_id", None)
         key = cs.chat_key(PLATFORM, chat_id, _thread_of(msg))
@@ -188,7 +242,7 @@ class TelegramSwipe:
                         and str(getattr(msg, "message_id", "")) == str(current.get("message_id"))
                         and pos != current.get("pos")):
                     await self._render_quietly(current)  # these buttons are behind: catch up
-                return
+                return None
             await _answer(q, TOAST.get(out.get("decision"), ""))
             session = out["session"]
             if out.get("decision") == "send":
@@ -202,6 +256,7 @@ class TelegramSwipe:
             await self._render_quietly(session)
             if out.get("decision") != "send" and session.get("status") == "finishing":
                 self._schedule_finish(session)  # the wait starts once the card is on screen
+            return session if out.get("decision") == "send" else None
 
     async def _render_quietly(self, session: dict) -> None:
         try:
@@ -238,43 +293,99 @@ class TelegramSwipe:
                     return None
             elif mtype != "text" or not text or text.startswith("/"):
                 return None
+            if not audio:
+                async with self._lock_for(key):
+                    return await self._save_note(root, key, user_id, text, None, None, session["token"])
+            # A voice note. Pin it to the card it was sent for, say we're listening, and turn it
+            # into text outside the chat's lock so the buttons keep working meanwhile.
             async with self._lock_for(key):
-                note = text
-                if audio:
-                    note = await _transcribe(audio)
-                    if note is None:
-                        fresh = await asyncio.to_thread(cs.set_notice, root, key, session["token"],
-                                                        "Couldn't make out that voice note. Try again, or type it.")
-                        if fresh:
-                            await self._render_quietly(fresh)
-                        return {"action": "skip", "reason": "riah-swipe: voice note not transcribed"}
-                out = await asyncio.to_thread(cs.add_note, root, key, user_id, note, audio)
-                if not out.get("ok"):
+                session = await asyncio.to_thread(cs.get, root, key)
+                if not cs.wants_note(session, user_id):
                     return None
-                where = "this one" if out.get("held") else f"“{out['title']}”"
-                fresh = await asyncio.to_thread(cs.set_notice, root, key, out["session"]["token"],
-                                                f"Note added to {where}: “{cs.core.clean_text(note, 140)}”")
+                target = cs.note_target(session)
+                token = session["token"]
+                fresh = await asyncio.to_thread(cs.set_notice, root, key, token, LISTENING, True)
                 if fresh:
                     if fresh.get("status") == "finishing":
-                        self._schedule_finish(fresh)  # more time for another note
+                        # don't send the deck while the note is on its way (but never strand it)
+                        self._schedule_finish(fresh, TRANSCRIBE_TIMEOUT + self.finish_delay())
                     await self._render_quietly(fresh)
-                    if fresh.get("status") == "finishing":
-                        self._schedule_finish(fresh)
-            return {"action": "skip", "reason": "riah-swipe: note for the card being swiped"}
+            try:
+                note = await asyncio.wait_for(_transcribe(audio), TRANSCRIBE_TIMEOUT)
+            except asyncio.TimeoutError:
+                logger.info("riah-swipe: voice note took too long to transcribe; keeping the clip")
+                note = None
+            except Exception:
+                logger.info("riah-swipe: voice note transcription failed", exc_info=True)
+                note = None
+            async with self._lock_for(key):
+                return await self._save_note(root, key, user_id, note or "", audio, target, token)
         except Exception:
             logger.warning("riah-swipe: note capture failed", exc_info=True)
             return None
 
+    async def _save_note(self, root: Path, key: str, user_id: Any, note: str, audio: Any,
+                         target: str | None, token: str) -> dict | None:
+        """Attach the note and redraw the card (the chat's lock is held). Returns the hook's
+        answer: skip the message, or None to let Hermes have it after all."""
+        out = await asyncio.to_thread(cs.add_note, root, key, user_id, note, audio, target)
+        if not out.get("ok") and out.get("reason") == "no_card" and target:
+            # that card was undone and the deck moved on: the note goes with what's up now
+            out = await asyncio.to_thread(cs.add_note, root, key, user_id, note, audio, None)
+        if not out.get("ok"):
+            if not audio:
+                return None
+            # No words and no clip to keep, or the deck was sent while we listened.
+            lost = out.get("reason") == "empty"
+            fresh = await asyncio.to_thread(
+                cs.set_notice, root, key, token,
+                "Couldn't make out that voice note. Try again, or type it." if lost else "")
+            if fresh and fresh.get("status") in ("active", "finishing"):
+                await self._render_quietly(fresh)
+                if fresh.get("status") == "finishing":
+                    self._schedule_finish(fresh)
+            if lost:
+                return {"action": "skip", "reason": "riah-swipe: voice note not transcribed"}
+            return None
+        where = "this one" if out.get("held") else f"“{out['title']}”"
+        if out.get("heard"):
+            notice = f"Note added to {where}: “{cs.core.clean_text(note, 140)}”"
+        else:
+            notice = (f"Couldn't make out that voice note. The clip is saved with {where}; "
+                      "type it too if you'd like Hermes to read it.")
+        fresh = await asyncio.to_thread(cs.set_notice, root, key, out["session"]["token"], notice)
+        if fresh:
+            if fresh.get("status") == "finishing":
+                self._schedule_finish(fresh)  # more time for another note
+            await self._render_quietly(fresh)
+            if fresh.get("status") == "finishing":
+                self._schedule_finish(fresh)
+        if audio and not out.get("heard"):
+            return {"action": "skip", "reason": "riah-swipe: voice note kept as a clip (not transcribed)"}
+        return {"action": "skip", "reason": "riah-swipe: note for the card being swiped"}
+
     # ------------------------------------------------------------------ finishing
 
-    def _schedule_finish(self, session: dict) -> None:
+    def _finish_wait(self, session: dict) -> float:
+        """How long to wait for a last note. Longer when the last card was sent back with no
+        note yet: saying what should change takes a moment."""
+        delay = self.finish_delay()
+        try:
+            if cs.owes_note(self.root_fn(), session):
+                delay = min(MAX_FINISH_WAIT, delay * REDO_WAIT_FACTOR)
+        except Exception:
+            logger.info("riah-swipe: could not check for a missing Redo note", exc_info=True)
+        return delay
+
+    def _schedule_finish(self, session: dict, delay: float | None = None) -> None:
         key = session["key"]
         self._cancel_finish(key)
         loop = self.loop or asyncio.get_event_loop()
         token = session["token"]
         gen = self._gen[key]
         self._timers[key] = loop.call_later(
-            self.finish_delay(), lambda: loop.create_task(self._auto_finish(key, token, gen)))
+            self._finish_wait(session) if delay is None else delay,
+            lambda: loop.create_task(self._auto_finish(key, token, gen)))
 
     def _cancel_finish(self, key: str) -> None:
         self._gen[key] = self._gen.get(key, 0) + 1
@@ -293,6 +404,7 @@ class TelegramSwipe:
                 return
             session = await self._done(session)
             await self._render_quietly(session)
+        await self._start_next(session)  # outside the lock: the next deck takes it itself
 
     async def _done(self, session: dict) -> dict:
         """Hand the finished deck to Hermes. on_done returns True when Hermes was told straight
@@ -325,6 +437,10 @@ class TelegramSwipe:
         card = v["card"]
         kind, src = cs.media_of(root, card)
         caption = v["caption"]
+        bad = (session.get("deck_id"), (card or {}).get("id"))
+        no_file = kind is not None and bad in self._bad_media
+        if no_file:  # Telegram wouldn't take this card's file: show it as words instead
+            kind, src = None, None
         want = "media" if kind else "text"
         bot = self.app.bot
         chat_id = session["chat_id"]
@@ -335,7 +451,8 @@ class TelegramSwipe:
         if not fresh and msg_id and session.get("message_kind") == want:
             try:
                 if want == "media" and not same_card:
-                    media = _input_media(kind, _file(src, session, card), _trim(caption, CAPTION_MAX))
+                    file = await asyncio.to_thread(_file, src, session, card)
+                    media = _input_media(kind, file, _trim(caption, CAPTION_MAX))
                     sent = await bot.edit_message_media(chat_id=chat_id, message_id=int(msg_id), media=media,
                                                         reply_markup=markup)
                 elif want == "media":
@@ -343,7 +460,7 @@ class TelegramSwipe:
                                                           caption=_trim(caption, CAPTION_MAX), reply_markup=markup)
                 else:
                     sent = await bot.edit_message_text(chat_id=chat_id, message_id=int(msg_id),
-                                                       text=_text_body(card, caption), reply_markup=markup)
+                                                       text=_words(card, caption, no_file), reply_markup=markup)
                 await self._remember(session, sent, want, card, kind)
                 return
             except Exception as e:
@@ -354,11 +471,19 @@ class TelegramSwipe:
         sent = None
         try:
             if want == "media":
-                sent = await _send_media(bot, kind, chat_id, thread, _file(src, session, card),
-                                         _trim(caption, CAPTION_MAX), markup)
-            else:
+                try:
+                    file = await asyncio.to_thread(_file, src, session, card)
+                    sent = await _send_media(bot, kind, chat_id, thread, file,
+                                             _trim(caption, CAPTION_MAX), markup)
+                except Exception as e:
+                    if type(e).__name__ in ("TimedOut", "NetworkError", "RetryAfter", "TimeoutError"):
+                        raise  # the connection, not the file
+                    logger.info("riah-swipe: the card's file wouldn't send (%s); showing it as text", e)
+                    self._bad_media.add(bad)
+                    want, kind, no_file = "text", None, True
+            if want == "text":
                 sent = await bot.send_message(chat_id=chat_id, message_thread_id=thread,
-                                              text=_text_body(card, caption), reply_markup=markup)
+                                              text=_words(card, caption, no_file), reply_markup=markup)
         finally:
             if sent is not None and msg_id and not fresh:
                 try:
@@ -407,6 +532,14 @@ def _trim(text: str, limit: int) -> str:
 def _text_body(card: dict | None, caption: str) -> str:
     body = cs.card_text(card)
     return _trim((body + "\n\n" + caption).strip() if body else caption or "…", 4096)
+
+
+def _words(card: dict | None, caption: str, no_file: bool) -> str:
+    """The text of a card's message. A media card whose file wouldn't load says so; its caption
+    already carries the card's words."""
+    if no_file:
+        return _trim((caption + "\n\n" + NO_MEDIA).strip(), 4096)
+    return _text_body(card, caption)
 
 
 def _file(src: str | None, session: dict, card: dict | None) -> Any:

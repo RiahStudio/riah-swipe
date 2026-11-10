@@ -403,9 +403,12 @@ class NoteFlowTests(LayerBase):
         with fake_transcriber({"success": False, "error": "no provider"}):
             out = await self.layer.on_dispatch(event(mtype="voice", media=[str(clip)]))
         self.assertEqual(out["action"], "skip")
-        self.assertIn("Couldn't make out that voice note", self.bot.last()["media"].caption
+        self.assertIn("Couldn't make out that voice note. The clip is saved", self.bot.last()["media"].caption
                       if "media" in self.bot.last() else self.bot.last()["caption"])
-        self.assertEqual(self.verdicts()["dk-01"]["note"], "")
+        v = self.verdicts()["dk-01"]  # the clip is never thrown away: Hermes still gets it
+        self.assertEqual(v["note"], cs.UNHEARD)
+        self.assertEqual(len(v["audio"]), 1)
+        self.assertTrue((self.root / v["audio"][0]).is_file())
 
     async def test_transcriber_missing(self):
         await self.start()
@@ -680,6 +683,7 @@ class ReviewFixTests(LayerBase):
             raise RuntimeError("Bad Request: chat not found")
         self.bot.send_photo = boom
         self.bot.send_document = boom
+        self.bot.send_message = boom  # the words-only fallback can't reach the chat either
         self.deck("i")
         out = await asyncio.to_thread(self.layer.start_deck, "dk", CHAT, USER, "")
         self.assertFalse(out["ok"])

@@ -6,6 +6,9 @@ same file the board uses, so a deck can start in the chat and finish on the boar
 
 Notes follow one rule: a note sent after a tap belongs to the card just tapped; a note sent
 before the first tap (or right after an Undo) is held for the card on screen.
+
+One deck is on screen per chat. A deck published while the person is still swiping another
+waits in line and shows up when that one is sent.
 """
 from __future__ import annotations
 
@@ -20,11 +23,15 @@ from . import swipe_core as core
 
 ACTIONS = {"k": "keep", "c": "discard", "r": "revise"}
 LABEL = {"keep": "Kept", "discard": "Cut", "revise": "Redo"}
-NOTE_WINDOW_MINUTES = 30  # after this long with no tap, messages go to Hermes again
+NOTE_WINDOW_MINUTES = 10  # after this long with no tap, messages go to Hermes again
 FINISH_WINDOW_SECONDS = 360  # a finished deck waits for a last note at most this long (the
 # chat layer's grace timer is 3-300 s); past it the deck counts as done even if no timer fired
 MAX_AUDIO_BYTES = 20 * 1024 * 1024
 MAX_SESSIONS = 100
+MAX_QUEUE = 20  # decks waiting their turn in one chat
+PREVIEW_CHARS = 300  # how much of a picture card's text rides along in its caption
+STALE_FINISH_HOURS = 24
+UNHEARD = "(voice note: couldn't be turned into text; the clip is saved)"
 AUDIO_EXT = {".ogg", ".oga", ".opus", ".mp3", ".m4a", ".wav", ".webm", ".flac", ".aac"}
 
 _lock = threading.Lock()
@@ -48,8 +55,8 @@ def chat_key(platform: str, chat_id: Any, thread_id: Any = "") -> str:
     return f"{str(platform).lower()}:{chat_id}:{thread}"
 
 
-def _load(root: Path) -> dict:
-    data = core.read_json(_path(root), {}) or {}
+def _load(root: Path, strict: bool = False) -> dict:
+    data = core.read_json(_path(root), {}, strict=strict) or {}
     return data if isinstance(data, dict) and isinstance(data.get("chats"), dict) else {"chats": {}}
 
 
@@ -57,7 +64,7 @@ def _update(root: Path, fn) -> Any:
     """Read-modify-write the session file under both a thread and a file lock."""
     root = core.ensure_root(root)
     with _lock, core.file_lock(_lock_path(root)):
-        data = _load(root)
+        data = _load(root, strict=True)  # never write an empty file over one that was only locked
         out = fn(data["chats"])
         if len(data["chats"]) > MAX_SESSIONS:
             oldest = sorted(data["chats"], key=lambda k: data["chats"][k].get("touched", ""))
@@ -115,9 +122,29 @@ def _join_note(old: str, new: str) -> str:
 # --------------------------------------------------------------------------- operations
 
 
+def _live(s: Any) -> bool:
+    """Is the person in the middle of this deck (opened or tapped lately, or waiting on a last note)?"""
+    if not isinstance(s, dict):
+        return False
+    if s.get("status") == "finishing":
+        return _still_finishing(s)
+    return (s.get("status") == "active"
+            and _minutes_since(s.get("tapped") or s.get("touched")) <= NOTE_WINDOW_MINUTES)
+
+
+def _queue_of(s: Any) -> list[dict]:
+    rows = s.get("queue") if isinstance(s, dict) else None
+    return [dict(e) for e in rows or [] if isinstance(e, dict) and isinstance(e.get("deck"), str)]
+
+
 def open_session(root: Path, deck_id: str, platform: str, chat_id: Any, user_id: Any,
-                 thread_id: Any = "") -> dict:
-    """Start swiping `deck_id` in this chat (replacing any earlier deck in the same chat)."""
+                 thread_id: Any = "", queue: list | None = None) -> dict:
+    """Start swiping `deck_id` in this chat.
+
+    If the person is in the middle of another deck here, this one waits in line instead and
+    the result is {"queued": place_in_line, "session": the deck on screen}. Otherwise it takes
+    the chat; an earlier deck that was left open comes back as result["replaced"].
+    `queue`: decks that were already waiting behind this one."""
     root = core.ensure_root(root)
     _deck, cards = _cards(root, deck_id)
     if not cards:
@@ -137,8 +164,42 @@ def open_session(root: Path, deck_id: str, platform: str, chat_id: Any, user_id:
         session["status"] = "finishing"
 
     def fn(chats):
+        old = chats.get(key)
+        waiting = [e for e in _queue_of(old) + _queue_of({"queue": queue}) if e["deck"] != deck_id]
+        seen: set = set()
+        waiting = [e for e in waiting if not (e["deck"] in seen or seen.add(e["deck"]))]
+        if _live(old) and old.get("deck_id") != deck_id:
+            mine = {"deck": deck_id, "user": str(user_id or "")}
+            behind = _queue_of({"queue": queue})
+            line = _queue_of(old)
+            if not any(e["deck"] == deck_id for e in line):  # asked twice: it keeps its place
+                line = [e for e in line if e not in behind]
+                line = (line + [mine] + [e for e in behind if e["deck"] != deck_id])[:MAX_QUEUE]
+            old["queue"] = line
+            place = next((i for i, e in enumerate(line, start=1) if e["deck"] == deck_id), 0)
+            return {"queued": place, "session": dict(old)}
+        session["queue"] = waiting[:MAX_QUEUE]
         chats[key] = session
-        return dict(session)
+        out = dict(session)
+        if isinstance(old, dict) and old.get("status") in ("active", "finishing") and old.get("deck_id") != deck_id:
+            out["replaced"] = dict(old)
+        return out
+
+    return _update(root, fn)
+
+
+def take_next(root: Path, key: str, token: str) -> dict | None:
+    """After a deck is sent or stopped: the next deck waiting in this chat, and the ones behind it.
+    Returns {"deck", "user", "rest"} once, or None."""
+    def fn(chats):
+        s = chats.get(key)
+        if not s or s.get("token") != token or s.get("status") not in ("sent", "stopped"):
+            return None
+        line = _queue_of(s)
+        if not line:
+            return None
+        s["queue"] = []
+        return {"deck": line[0]["deck"], "user": line[0].get("user") or s.get("user_id") or "", "rest": line[1:]}
 
     return _update(root, fn)
 
@@ -234,6 +295,42 @@ def finishing_sessions(root: Path) -> list[dict]:
     return [dict(s) for s in _load(root)["chats"].values() if _still_finishing(s)]
 
 
+def overdue_sessions(root: Path) -> list[dict]:
+    """Swiped to the end, but the wait ran out and nothing sent them (Hermes restarted mid-wait)."""
+    return [dict(s) for s in _load(root)["chats"].values()
+            if isinstance(s, dict) and s.get("status") == "finishing" and not _still_finishing(s)
+            and _minutes_since(s.get("touched")) <= STALE_FINISH_HOURS * 60]
+
+
+def note_target(session: dict | None) -> str | None:
+    """The card a note sent right now belongs to: the one just tapped, else the one on screen."""
+    if not session:
+        return None
+    if session.get("last"):
+        return session["last"]
+    order, pos = session.get("order") or [], session.get("pos") or 0
+    return order[pos] if pos < len(order) else None
+
+
+def owes_note(root: Path, session: dict | None) -> bool:
+    """The card just tapped was sent back (Redo) and has no note yet."""
+    last = (session or {}).get("last")
+    if not last:
+        return False
+    v = _verdicts(root, session["deck_id"]).get(last) or {}
+    return v.get("decision") == "revise" and not v.get("note")
+
+
+def still_open(root: Path, deck_id: str) -> bool:
+    """Does this deck exist and still have a card nobody has decided?"""
+    try:
+        _deck, cards = _cards(root, deck_id)
+    except core.SwipeError:
+        return False
+    decided = _verdicts(root, deck_id)
+    return any(c.get("id") not in decided for c in cards)
+
+
 def finishing_decks(root: Path) -> set:
     """Decks swiped to the end in a chat but still open for a last note."""
     return {s.get("deck_id") for s in finishing_sessions(root)}
@@ -266,8 +363,13 @@ def _keep_audio(root: Path, deck_id: str, card_id: str, audio_path: Any) -> str 
         return None
 
 
-def add_note(root: Path, key: str, user_id: Any, text: str, audio_path: Any = None) -> dict:
-    """Attach a note. Returns {"ok", "card", "title", "held"(bool), "session"} or {"ok": False}."""
+def add_note(root: Path, key: str, user_id: Any, text: str, audio_path: Any = None,
+             target: str | None = None) -> dict:
+    """Attach a note. Returns {"ok", "card", "title", "held"(bool), "session"} or {"ok": False}.
+
+    `target`: the card the note was meant for when it arrived (see note_target), for a voice
+    note that took a while to turn into text while the person kept swiping. A voice note with
+    no text still counts: the clip is kept and the note says so."""
     root = core.ensure_root(root)
     text = core.clean_text(text, core.MAX_NOTE_CHARS)
 
@@ -277,27 +379,32 @@ def add_note(root: Path, key: str, user_id: Any, text: str, audio_path: Any = No
             return {"ok": False, "reason": "not_listening"}
         if not text and not audio_path:
             return {"ok": False, "reason": "empty"}
-        deck_id = s["deck_id"]
-        held = not s.get("last")
-        card_id = s["order"][s["pos"]] if held and s["pos"] < len(s["order"]) else s.get("last")
-        if not card_id:
+        deck_id, order, pos = s["deck_id"], s["order"], s["pos"]
+        on_screen = order[pos] if pos < len(order) else None
+        card_id = target or s.get("last") or on_screen
+        if not card_id or card_id not in order:
             return {"ok": False, "reason": "no_card"}
+        v = _verdicts(root, deck_id).get(card_id)
+        decided = bool(v and v.get("decision") in core.DECISIONS)
+        if not decided and card_id != on_screen:
+            return {"ok": False, "reason": "no_card"}  # undone, and the deck has moved on
+        held = not decided
         clip = _keep_audio(root, deck_id, card_id, audio_path) if audio_path else None
+        words = text or (UNHEARD if clip else "")
+        if not words:
+            return {"ok": False, "reason": "empty"}
         if held:
-            s["held"] = _join_note(s.get("held", ""), text)
+            s["held"] = _join_note(s.get("held", ""), words)
             if clip:
                 s.setdefault("held_audio", []).append(clip)
         else:
-            v = _verdicts(root, deck_id).get(card_id)
-            if not v or v.get("decision") not in core.DECISIONS:
-                return {"ok": False, "reason": "no_card"}
             audio = list(v.get("audio") or []) if isinstance(v.get("audio"), list) else []
             if clip:
                 audio.append(clip)
-            core.set_verdict(root, deck_id, card_id, v["decision"], _join_note(v.get("note", ""), text),
+            core.set_verdict(root, deck_id, card_id, v["decision"], _join_note(v.get("note", ""), words),
                              via="chat", extra={"audio": audio} if audio else None)
         s["touched"] = core.now_iso()
-        return {"ok": True, "card": card_id, "held": held, "session": dict(s)}
+        return {"ok": True, "card": card_id, "held": held, "heard": bool(text), "session": dict(s)}
 
     out = _update(root, fn)
     if out.get("ok"):
@@ -305,12 +412,16 @@ def add_note(root: Path, key: str, user_id: Any, text: str, audio_path: Any = No
     return out
 
 
-def set_notice(root: Path, key: str, token: str, notice: str) -> dict | None:
+def set_notice(root: Path, key: str, token: str, notice: str, touch: bool = False) -> dict | None:
+    """Put one line at the top of the card. `touch`: the person just did something, so the
+    waits (for notes, for the last note) start over."""
     def fn(chats):
         s = chats.get(key)
         if not s or s.get("token") != token:
             return None
         s["notice"] = core.clean_text(notice, 300)
+        if touch:
+            s["touched"] = core.now_iso()
         return dict(s)
 
     return _update(root, fn)
@@ -343,7 +454,8 @@ def finish(root: Path, key: str, token: str) -> dict | None:
 
 
 def stop(root: Path, key: str, token: str | None = None) -> dict | None:
-    """Stop swiping in this chat (only the session with `token`, when given)."""
+    """Stop swiping in this chat (only the session with `token`, when given). Decks waiting in
+    line are dropped from the chat too; they stay on the board."""
     def fn(chats):
         s = chats.get(key)
         if not s or s.get("status") not in ("active", "finishing"):
@@ -351,6 +463,8 @@ def stop(root: Path, key: str, token: str | None = None) -> dict | None:
         if token is not None and s.get("token") != token:
             return None
         s["status"] = "stopped"
+        s["dropped"] = len(_queue_of(s))
+        s["queue"] = []
         return dict(s)
 
     return _update(root, fn)
@@ -388,14 +502,22 @@ def view(root: Path, session: dict) -> dict:
         if status == "finishing":
             lines.append(f"All {total} swiped: {tally}.")
             if last:
-                lines.append(f"Send a voice note to add to “{card_title(root, session['deck_id'], last)}”, "
-                             "or tap Send.")
+                name = card_title(root, session["deck_id"], last)
+                v = _verdicts(root, session["deck_id"]).get(last) or {}
+                if v.get("decision") == "revise" and not v.get("note"):
+                    lines.append(f"Redo “{name}”: say what should change, or tap Send.")
+                else:
+                    lines.append(f"Send a voice note to add to “{name}”, or tap Send.")
         elif status == "sent" and session.get("delivery") == "next_message":
             lines.append(f"Done: {tally}. Hermes gets these with your next message.")
         elif status == "sent":
             lines.append(f"Sent to Hermes: {tally}.")
         else:
             lines.append(f"Stopped. {s['decided']} of {total} swiped; the rest are on the board.")
+            dropped = session.get("dropped") or 0
+            if dropped:
+                lines.append(f"{dropped} more deck{'s' if dropped != 1 else ''} that {'were' if dropped != 1 else 'was'} "
+                             "next in line: on the board too.")
     else:
         if last and not session.get("notice"):
             v = _verdicts(root, session["deck_id"]).get(last) or {}
@@ -404,15 +526,22 @@ def view(root: Path, session: dict) -> dict:
                 lines.append(f"Redo “{name}”: what should change? Send a voice note.")
             elif v.get("decision") in LABEL:
                 lines.append(f"{LABEL[v['decision']]} “{name}”. A voice note adds why.")
+        elif not last and not session.get("notice") and not session.get("held"):
+            lines.append("Tap a button. Say or type a note on any card.")
         if session.get("held"):
             lines.append(f"Note for this one: “{core.clean_text(session['held'], 120)}”")
         if shown:
             lines.append("")
             lines.append(shown.get("title") or "")
+            if shown.get("kind") in ("image", "video", "audio") and shown.get("preview"):
+                words = " ".join(str(shown["preview"]).split())
+                lines.append(words if len(words) <= PREVIEW_CHARS else words[: PREVIEW_CHARS - 1].rstrip() + "…")
             extra = " · ".join(x for x in (shown.get("caption"), shown.get("tag")) if x)
             if extra:
                 lines.append(extra)
-            lines.append(f"{pos + 1} of {total} · {deck.get('name', '')}")
+            waiting = len(_queue_of(session))
+            lines.append(f"{pos + 1} of {total} · {deck.get('name', '')}"
+                         + (f" · {waiting} more deck{'s' if waiting != 1 else ''} after this" if waiting else ""))
     buttons: list[list[tuple[str, str]]] = []
     if status == "active" and pos < total:
         buttons.append([("✓ Keep", "k"), ("✕ Cut", "c"), ("↻ Redo", "r")])

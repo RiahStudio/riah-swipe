@@ -80,15 +80,30 @@ Notes are optional, on any card:
 
 - After you tap a button, send a voice note or type a message, and it's
   attached to the card you just decided. "Kept it, the blue one reads better"
-  or "Cut, the hands look wrong" both work.
+  or "Cut, the hands look wrong" both work. A note can be about the whole
+  batch, too ("none of these feel like summer"); Hermes reads every note
+  before it makes the next round.
 - Before your first tap, or right after Undo, a note goes with the card on
   screen and is saved when you decide it.
+- Keep swiping while a voice note is being turned into text. The card says
+  "Listening to your voice note…" and the note still lands on the card you
+  said it for.
 - Redo asks for a note but never waits for one. Send nothing and keep going.
-- After the last card there's a short wait (20 seconds by default) for one more
-  note, with a **Send** button to skip it. Then the verdicts go back to Hermes.
+- After the last card there's a short wait (30 seconds by default, longer if
+  you tapped Redo and haven't said what to change yet) for one more note, with
+  a **Send** button to skip it. Then the verdicts go back to Hermes.
   The card says "Sent to Hermes" if Hermes heard straight away, or "Hermes gets
   these with your next message" if it isn't allowed to post into the chat yet
   (see `allow_gateway_injection` above).
+
+**Several decks in a row.** If Hermes makes another deck while you're still
+swiping, it waits its turn and shows up in the chat when you finish the one on
+screen. The card tells you how many are waiting. A deck you walked away from
+for 10 minutes gives way to the next one; its cards stay on the board.
+
+**Redo rounds.** When Hermes remakes the cards you sent back, the new deck is
+marked "round 2" and each remade card shows what you asked for ("You said:
+“make the hat red”"), so you can check it against your own words.
 
 Only the person who asked for the deck can tap the buttons or add notes, and only while a deck
 is open in that chat. Commands like `/swipe` always pass through to Hermes.
@@ -97,7 +112,11 @@ the rest stay on the board.
 
 Voice notes are turned into text with Hermes' own speech-to-text, the same
 one that lets Hermes understand voice messages. If Hermes already understands
-your voice messages, you're set. The audio clip is kept with the deck too.
+your voice messages, you're set. The audio clip is always kept with the deck.
+If the words can't be made out, the card says so and the clip is still saved
+with your verdict, so nothing you said is lost; type the note too if you want
+Hermes to read it. A card whose picture or video won't load in the chat is
+shown as text instead, and you can still swipe it.
 
 Swiping in chat needs Hermes 0.22.3 or newer (tested on 0.22.5), with plugins running inside
 Hermes (`plugins.isolation: in_process`, which is the default). On older
@@ -142,9 +161,9 @@ phone can't connect, allow inbound connections for Python on private networks.
 
 | Tool | What it does |
 |---|---|
-| `swipe_publish` | Makes a deck from a list of cards (text, image, video or audio) and returns the board link |
+| `swipe_publish` | Makes a deck from a list of cards (text, image, video or audio) and returns the board link. `redo_of` makes it the next round of an earlier deck, and a card's `replaces` says which card it remakes |
 | `swipe_status` | The board link and progress on recent decks |
-| `swipe_results` | Keep, revise (with your notes) and discard lists for one deck |
+| `swipe_results` | Keep, revise and discard lists for one deck, with every note in the order you gave it, saved voice clips, and what to do next |
 | `swipe_wait` | Waits for you to finish a deck. Only in interactive sessions; returns at once anywhere else |
 
 There are two hooks:
@@ -156,7 +175,7 @@ There are two hooks:
   voice note or typed note from the person swiping and attaches it to the
   card, so it doesn't start a new Hermes turn. Everything else (other people,
   other chats, commands, photos, a reply to some other message, any chat with
-  no open deck) passes through untouched. A deck left alone for 30 minutes
+  no open deck) passes through untouched. A deck left alone for 10 minutes
   stops catching notes. Swiping in chat needs plugins loaded in-process (the
   default); with `plugins.isolation: host` Hermes doesn't let plugins add Telegram
   buttons, so you get the board link instead.
@@ -171,7 +190,7 @@ There are two hooks:
 | `port` | `8137` | First port to try. If it's taken, the next free one (up to +19) is used |
 | `media_dirs` | empty | Extra folders Hermes may copy local media from, separated by commas (or a list) |
 | `chat_swipe` | `true` | Show decks made in Telegram right in the chat, with buttons |
-| `chat_finish_delay` | `20` | Seconds to wait after the last card for one more note (3 to 300) |
+| `chat_finish_delay` | `30` | Seconds to wait after the last card for one more note (3 to 300). The wait is longer after a Redo with no note yet |
 
 Local media is copied only from your working folder (unless that is your home
 folder), Hermes' own image, audio and video caches, the temp folder, and any

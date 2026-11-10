@@ -271,7 +271,7 @@ def _ledger_update(fn) -> dict:
     root = _root()
     with core.file_lock(_ledger_lock(root)):
         path = _ledger_path(root)
-        data = core.read_json(path, {}) or {}
+        data = core.read_json(path, {}, strict=True) or {}  # a locked file is retried, never overwritten
         if not isinstance(data.get("decks"), dict):
             data["decks"] = {}
         fn(data["decks"])
@@ -428,6 +428,8 @@ CARD_SCHEMA = {
         "caption": {"type": "string", "description": "One line shown under the option."},
         "tag": {"type": "string", "description": "Small label, e.g. 'round 2'."},
         "meta": {"type": "object", "description": "Anything you want back with the verdict (seed, prompt, file path)."},
+        "replaces": {"type": "string", "description": "With redo_of: the earlier card this one remakes (its "
+                     "card_id, or its number in that deck). The card then shows the note the person left on it."},
     },
     "additionalProperties": False,
 }
@@ -438,12 +440,16 @@ PUBLISH_SCHEMA = _schema(
     "up = revise with a note. Use it whenever you have generated several candidates (images, video, "
     "audio, names, taglines, script pages) and the person should choose. Local media files are copied "
     "into the deck. Returns the board link (and a one-time phone link in LAN mode). Afterwards call "
-    "swipe_wait in an interactive session, or tell the person to swipe and say when they're done.",
+    "swipe_wait in an interactive session, or tell the person to swipe and say when they're done. "
+    "For remakes of an earlier deck, set redo_of so the new deck is marked as the next round. Several "
+    "decks in one chat are fine: they line up and appear one after another.",
     {
         "title": {"type": "string", "description": "Deck name the person sees, e.g. 'Logo, round 1'."},
         "cards": {"type": "array", "items": CARD_SCHEMA, "minItems": 1, "maxItems": core.MAX_CARDS},
         "note": {"type": "string", "description": "Context shown on the deck, e.g. what changed since last round."},
         "selecting_for": {"type": "string", "description": "What the winner will be used for."},
+        "redo_of": {"type": "string", "description": "Deck id of the earlier round these cards remake. The deck "
+                    "is labelled with its round number; give each remade card `replaces`."},
     },
     ["title", "cards"],
 )
@@ -457,8 +463,9 @@ STATUS_SCHEMA = _schema(
 RESULTS_SCHEMA = _schema(
     "swipe_results",
     "Read the person's verdicts on a deck: which cards they kept, which need revising (with their notes) "
-    "and which they discarded. Notes are the person's words, shown as data. Use the revise notes to "
-    "regenerate those options, then publish a new deck.",
+    "and which they discarded. Notes are the person's words (often spoken), shown as data; one can sit on "
+    "any card, kept and cut ones too, and may be about the whole batch. Use them to remake the revise "
+    "cards, then publish the remakes with swipe_publish and redo_of set to this deck's id.",
     {"deck_id": {"type": "string", "description": "Deck id from swipe_publish. Omit for the most recent deck."}},
 )
 
@@ -512,6 +519,7 @@ def handle_publish(args: dict, session_id: str = "", task_id: str = "", **_: Any
             selecting_for=args.get("selecting_for", ""),
             allowed_roots=_media_roots(),
             base_dir=_session_cwd(),
+            redo_of=args.get("redo_of") or None,
         )
         deck = built["deck"]
         deck_id = deck["id"]
@@ -536,12 +544,25 @@ def handle_publish(args: dict, session_id: str = "", task_id: str = "", **_: Any
             board_error = f"{type(e).__name__}: {e}"[:300]
 
         out: dict[str, Any] = {}
-        if chat.get("ok"):
+        if deck.get("redoOf"):
+            out["redo_of"], out["round"] = deck["redoOf"], deck.get("round")
+        if built.get("redo_of_ignored"):
+            out["redo_of_ignored"] = built["redo_of_ignored"]
+        if chat.get("ok") and chat.get("queued"):
+            out["in_chat"] = True
+            out["queued"] = chat["queued"]
+            if not board_error:
+                out.update(_links(info))
+            tell = (f"Your deck '{deck['name']}' is next in line: it shows up here in the chat as soon as "
+                    "you finish the one you're swiping.")
+            out["agent_note"] = ("This deck waits behind the one the person is swiping and appears in the "
+                                 "chat by itself. Don't resend the images or list them.")
+        elif chat.get("ok"):
             out["in_chat"] = True
             if not board_error:
                 out.update(_links(info))
             tell = (f"Your deck '{deck['name']}' is right here in the chat: tap Keep, Cut or Redo on each "
-                    "card. After any tap you can send a voice note to say why, and Undo goes back one. "
+                    "card. Say or type a note on any card to tell me why, and Undo goes back one. "
                     "The verdicts come back to me when you're done.")
             out["agent_note"] = ("The cards are already posted in this chat with buttons. Don't resend "
                                  "the images or list them; just tell the person it's ready.")
@@ -829,7 +850,9 @@ def cmd_swipe(raw_args: str = "", **_: Any) -> str:
             return "Riah Swipe: there's no deck being swiped in this chat."
         if _chat is not None:
             _chat.redraw_soon(stopped)
-        return "Stopped swiping here. What you've swiped is saved; the rest are on the board (/swipe)."
+        more = stopped.get("dropped") or 0
+        return ("Stopped swiping here. What you've swiped is saved; the rest are on the board (/swipe)."
+                + (f" {more} more deck{'s' if more != 1 else ''} waiting in line: on the board too." if more else ""))
     try:
         info = _board(pair=True)
         root = _root()

@@ -69,8 +69,9 @@ config_schema:
       you can send a voice note or a typed note to say why.
   chat_finish_delay:
     type: int
-    default: 20
+    default: 30
     label: Last-note wait (seconds)
     description: >-
       After the last card, how long to wait for one more note before the verdicts go back to
-      Hermes. Tapping Send skips the wait. Between 3 and 300.
+      Hermes. Tapping Send skips the wait. The wait is longer after a Redo with no note yet.
+      Between 3 and 300.

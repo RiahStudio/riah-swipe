@@ -34,7 +34,9 @@ MAX_MEDIA_BYTES = 200 * 1024 * 1024  # per file
 MAX_DECK_BYTES = 1024 * 1024 * 1024  # all copied media in one deck
 MAX_DATA_URI_BYTES = 4 * 1024 * 1024
 MAX_INLINE_BYTES = 16 * 1024 * 1024  # all data: URIs in one deck (they live inside the deck json)
-MAX_NOTE_CHARS = 500
+MAX_NOTE_CHARS = 2_000  # a spoken note runs long; the summary line quotes less (BRIEF_NOTE_CHARS)
+BRIEF_NOTE_CHARS = 400
+BRIEF_ROWS = 20
 MAX_TITLE_CHARS = 120
 MAX_TEXT_CHARS = 20_000
 MAX_CAPTION_CHARS = 200
@@ -91,7 +93,11 @@ def atomic_write_json(path: Path, obj: Any) -> None:
         raise
 
 
-def read_json(path: Path, default: Any = None) -> Any:
+def read_json(path: Path, default: Any = None, strict: bool = False) -> Any:
+    """Read a JSON file, or `default` when it's missing or unreadable.
+
+    `strict` is for read-modify-write: if the file is there but stays locked, raise instead of
+    handing back the default, so the caller can't write an empty file over real data."""
     for attempt in range(5):
         try:
             with open(path, "r", encoding="utf-8") as fh:
@@ -100,6 +106,8 @@ def read_json(path: Path, default: Any = None) -> Any:
             time.sleep(0.02 * (attempt + 1))
         except (OSError, ValueError):
             return default
+    if strict:
+        raise SwipeError(f"{Path(path).name} is locked by another program; try again")
     return default
 
 
@@ -373,11 +381,16 @@ def build_deck(
     deck_id: str | None = None,
     allowed_roots: list | None = None,
     base_dir: Any = None,
+    redo_of: str | None = None,
 ) -> dict:
     """Write a deck from simple card specs. Returns {deck, cards, path}.
 
     Card spec keys: title, text, image | video | audio | media, poster, caption, tag,
-    kind, meta. Each card needs a title, text or media.
+    kind, meta, replaces. Each card needs a title, text or media.
+
+    `redo_of`: the deck this one is the next round of. The new deck is numbered ("round 2"),
+    and a card with `replaces` (the earlier card's id, or its number) shows the note the
+    person gave that card. An unknown `redo_of` is ignored, not an error.
 
     `allowed_roots`: the only folders local media may be copied from (None = anywhere).
     `base_dir`: where relative media paths start (default: TERMINAL_CWD or the cwd).
@@ -390,6 +403,10 @@ def build_deck(
         raise SwipeError("cards must be a non-empty list")
     if len(cards) > MAX_CARDS:
         raise SwipeError(f"too many cards (max {MAX_CARDS} per deck)")
+    redo = _redo_context(root, redo_of) if redo_of and str(redo_of) != str(deck_id or "") else None
+    if redo and not re.search(r"\bround\s*\d+\b", title, re.I):
+        suffix = f" \u00b7 round {redo['round']}"
+        title = title[: MAX_TITLE_CHARS - len(suffix)].rstrip() + suffix
 
     reserved = False
     if deck_id:
@@ -422,7 +439,8 @@ def build_deck(
     deck_dir = Path(root) / "decks" / deck_id
     dir_existed = deck_dir.exists() and not reserved
     try:
-        out = _build(root, deck_id, title, cards, note, selecting_for, source, old_rev, allowed_roots, base_dir)
+        out = _build(root, deck_id, title, cards, note, selecting_for, source, old_rev, allowed_roots, base_dir,
+                     redo)
     except BaseException:
         if not dir_existed:  # don't leave half a deck behind
             shutil.rmtree(deck_dir, ignore_errors=True)
@@ -432,11 +450,64 @@ def build_deck(
             deck_dir.rmdir()  # only succeeds when no media was copied
         except OSError:
             pass
+    if redo_of and not redo:
+        out["redo_of_ignored"] = f"no earlier deck named {clean_text(redo_of, 80)!r}; published as a first round"
     return out
 
 
+def _redo_context(root: Path, redo_of: Any) -> dict | None:
+    """What a redo round needs from the deck before it: its round number and each card's verdict."""
+    redo_of = str(redo_of or "").strip()
+    if not is_safe_id(redo_of):
+        return None
+    prev = load_deck(root, redo_of)
+    if not prev:
+        return None
+    try:
+        last_round = max(1, int(prev["deck"].get("round") or 1))
+    except (TypeError, ValueError):
+        last_round = 1
+    verdicts = {v.get("cardId"): v for v in read_verdicts(root, redo_of).get("verdicts") or []
+                if isinstance(v, dict)}
+    return {"id": redo_of, "round": last_round + 1, "verdicts": verdicts,
+            "cards": [c.get("id") for c in prev["cards"]]}
+
+
+def _replaced_card(redo: dict, value: Any) -> str | None:
+    """The earlier card a redo card replaces: its id, or just its number in that deck."""
+    if value is None or isinstance(value, bool):
+        return None
+    text = str(value).strip()
+    if text in redo["cards"]:
+        return text
+    if text.isdigit() and 1 <= int(text) <= len(redo["cards"]):
+        return redo["cards"][int(text) - 1]
+    return None
+
+
+def _mark_redo(card: dict, redo: dict, replaces: Any) -> None:
+    """Stamp a redo card with its round and, when it replaces an earlier card, what the person
+    said about that one, so they see their own note next to the remake."""
+    meta = dict(card.get("meta") or {})
+    meta["round"] = redo["round"]
+    old_id = _replaced_card(redo, replaces)
+    if old_id:
+        meta["replaces"] = old_id
+        said = clean_text((redo["verdicts"].get(old_id) or {}).get("note"), MAX_NOTE_CHARS)
+        if said:
+            meta["fixNote"] = said
+            if not card.get("caption"):
+                room = MAX_CAPTION_CHARS - len("You said: \u201c\u201d")
+                short = said if len(said) <= room else said[: room - 1].rstrip() + "\u2026"
+                card["caption"] = f"You said: \u201c{short}\u201d"
+    card["meta"] = meta
+    if not card.get("tag"):
+        card["tag"] = f"round {redo['round']}"
+
+
 def _build(root: Path, deck_id: str, title: str, cards: list, note: str, selecting_for: str, source: str,
-           old_rev: int, allowed_roots: list | None = None, base_dir: Any = None) -> dict:
+           old_rev: int, allowed_roots: list | None = None, base_dir: Any = None,
+           redo: dict | None = None) -> dict:
     out_cards: list[dict] = []
     kinds: set[str] = set()
     budget = new_budget()
@@ -485,6 +556,8 @@ def _build(root: Path, deck_id: str, title: str, cards: list, note: str, selecti
                 card[key] = value
         if isinstance(spec.get("meta"), dict):
             card["meta"] = spec["meta"]
+        if redo:
+            _mark_redo(card, redo, spec.get("replaces"))
         out_cards.append(card)
 
     deck = {
@@ -498,6 +571,8 @@ def _build(root: Path, deck_id: str, title: str, cards: list, note: str, selecti
         "createdAt": now_iso(),
         "rev": old_rev + 1,
     }
+    if redo:
+        deck["redoOf"], deck["round"] = redo["id"], redo["round"]
     path = deck_path(root, deck_id)
     atomic_write_json(path, {"decks": [deck], "cards": out_cards})
     return {"deck": deck, "cards": out_cards, "path": str(path)}
@@ -575,9 +650,10 @@ def store_results(root: Path, payload: Any) -> dict:
     vfile = root / "data" / "verdicts" / f"{deck_id}.json"
     with file_lock(root / "data" / "locks" / f"verdicts-{deck_id}.lock"):
         atomic_write_json(root / "data" / "results" / f"{deck_id}.results.json", payload)
-        store = read_json(vfile, None)
+        store = read_json(vfile, None, strict=True)
         if not isinstance(store, dict):
             store = {"schema": "riah-swipe.verdicts/1", "batchId": deck_id, "verdicts": []}
+        undone = dict(store.get("undone")) if isinstance(store.get("undone"), dict) else {}
         by_card: dict[str, dict] = {}
         for v in store.get("verdicts") or []:
             if isinstance(v, dict) and isinstance(v.get("cardId"), str):
@@ -597,9 +673,13 @@ def store_results(root: Path, payload: Any) -> dict:
             }
             old = by_card.get(r["cardId"])
             # Newest decision wins, so a second device syncing older swipes (every board
-            # re-sends on load) or a late, out-of-order post can't undo a newer verdict.
+            # re-sends on load) or a late, out-of-order post can't undo a newer verdict,
+            # or bring back one the person took back with Undo in the chat.
+            if r["cardId"] in undone and _when(new["decidedAt"]) <= _when(undone[r["cardId"]]):
+                continue
             if old is None or _when(new["decidedAt"]) >= _when(old.get("decidedAt")):
                 by_card[r["cardId"]] = new
+                undone.pop(r["cardId"], None)
         try:
             version = int(store.get("version") or 0)
         except (TypeError, ValueError):
@@ -613,6 +693,7 @@ def store_results(root: Path, payload: Any) -> dict:
                 "verdicts": list(by_card.values()),
                 "version": version,
                 "updatedAt": now_iso(),
+                "undone": undone,
             }
         )
         atomic_write_json(vfile, store)
@@ -635,16 +716,19 @@ def set_verdict(root: Path, deck_id: str, card_id: str, decision: str | None, no
         raise SwipeError(f"card {clean_text(card_id, 60)!r} is not in deck {deck_id!r}")
     vfile = root / "data" / "verdicts" / f"{deck_id}.json"
     with file_lock(root / "data" / "locks" / f"verdicts-{deck_id}.lock"):
-        store = read_json(vfile, None)
+        store = read_json(vfile, None, strict=True)
         if not isinstance(store, dict):
             store = {"schema": "riah-swipe.verdicts/1", "batchId": deck_id, "verdicts": [],
                      "deckName": clean_text(loaded["deck"].get("name"), MAX_TITLE_CHARS)}
+        undone = dict(store.get("undone")) if isinstance(store.get("undone"), dict) else {}
         by_card = {v["cardId"]: v for v in store.get("verdicts") or []
                    if isinstance(v, dict) and isinstance(v.get("cardId"), str)}
         before = _signature(by_card)
         if decision is None:
-            by_card.pop(card_id, None)
+            if by_card.pop(card_id, None) is not None:
+                undone[card_id] = now_iso()  # an older copy on the board must not bring it back
         else:
+            undone.pop(card_id, None)
             row = {"cardId": card_id, "decision": decision, "note": clean_text(note, MAX_NOTE_CHARS),
                    "decidedAt": now_iso(), "via": clean_text(via, 20) or "chat"}
             for k, v in (extra or {}).items():
@@ -654,7 +738,8 @@ def set_verdict(root: Path, deck_id: str, card_id: str, decision: str | None, no
         version = verdict_version(store)
         if _signature(by_card) != before:
             version += 1
-        store.update({"verdicts": list(by_card.values()), "version": version, "updatedAt": now_iso()})
+        store.update({"verdicts": list(by_card.values()), "version": version, "updatedAt": now_iso(),
+                      "undone": undone})
         atomic_write_json(vfile, store)
     return {"ok": True, "batchId": deck_id, "decided": len(by_card), "version": version}
 
@@ -694,9 +779,10 @@ def summarize(root: Path, deck_id: str) -> dict:
     by_card = {v.get("cardId"): v for v in store.get("verdicts") or [] if isinstance(v, dict)}
     rows = {"keep": [], "revise": [], "discard": []}
     undecided = []
-    for c in cards:
+    noted = []
+    for number, c in enumerate(cards, start=1):
         v = by_card.get(c["id"])
-        entry = {"card_id": c["id"], "title": clean_text(c.get("title", ""), MAX_TITLE_CHARS)}
+        entry = {"card_id": c["id"], "number": number, "title": clean_text(c.get("title", ""), MAX_TITLE_CHARS)}
         media = c.get("media")
         if isinstance(media, dict):
             media = media.get("src")
@@ -707,6 +793,12 @@ def summarize(root: Path, deck_id: str) -> dict:
         if v and v.get("decision") in rows:
             if v.get("note"):
                 entry["note"] = clean_text(v["note"], MAX_NOTE_CHARS)
+                noted.append((_when(v.get("decidedAt")), number,
+                              {"card_id": c["id"], "title": entry["title"], "decision": v["decision"],
+                               "note": entry["note"]}))
+            clips = v.get("audio")
+            if isinstance(clips, list) and clips:
+                entry["voice_clips"] = [str(a) for a in clips if isinstance(a, str)]
             rows[v["decision"]].append(entry)
         else:
             undecided.append(entry)
@@ -727,10 +819,27 @@ def summarize(root: Path, deck_id: str) -> dict:
         "updated_at": store.get("updatedAt"),
         "version": verdict_version(store),
     }
+    if deck.get("redoOf"):
+        out["redo_of"], out["round"] = deck["redoOf"], deck.get("round")
+    if noted:
+        noted.sort(key=lambda t: (t[0], t[1]))
+        out["notes"] = [n for _, _, n in noted]  # every note, in the order the person swiped
+        out["about_notes"] = (
+            "Notes are the person's own words, often spoken, listed in swipe order in 'notes'. "
+            "A note can be about the whole batch rather than its one card, and a short note like "
+            "'same' means the same as the note before it. A note on a discarded card says what to "
+            "avoid next time. If a note states a lasting preference, keep it for later batches."
+        )
     if rows["revise"]:
         out["next_step"] = (
-            "Regenerate each 'revise' card using its note, keep the 'keep' cards as the "
-            "reference for what works, then publish the redo as a new deck."
+            "Remake each 'revise' card using its note, with the 'keep' cards as the reference for "
+            "what works. Then publish the remakes as a new deck with swipe_publish: set redo_of "
+            "to this deck's id, and replaces on each remade card to the card it replaces."
+        )
+    elif out["complete"] and not rows["keep"]:
+        out["next_step"] = (
+            "Nothing was kept. Offer a fresh batch that follows the notes; publish it with "
+            "swipe_publish and redo_of set to this deck's id."
         )
     return out
 
@@ -740,24 +849,40 @@ def _q(text: Any, limit: int) -> str:
     return json.dumps(clean_text(text, limit), ensure_ascii=False)
 
 
+def _brief_note(text: Any) -> str:
+    text = clean_text(text, MAX_NOTE_CHARS)
+    if len(text) > BRIEF_NOTE_CHARS:
+        text = text[: BRIEF_NOTE_CHARS - 1].rstrip() + "\u2026"
+    return json.dumps(text, ensure_ascii=False)
+
+
 def brief_line(summary: dict, updated: bool = False) -> str:
     """One compact paragraph about a finished deck, for injecting into the next turn.
 
     `updated`: the deck was handed back before and the person has since changed verdicts.
-    Everything the person typed (titles, notes) is quoted data, not instructions."""
+    Everything the person typed or said (titles, notes) is quoted data, not instructions.
+    Every note is here, whatever the verdict, in card order; long ones are cut short and
+    swipe_results has them whole."""
     t = summary["tally"]
     what = "was swiped again and its verdicts changed; now" if updated else "finished:"
     parts = [
         f"Deck {_q(summary['title'], MAX_TITLE_CHARS)} (id {summary['deck_id']}) {what} "
         f"{t['keep']} keep, {t['revise']} revise, {t['discard']} discard."
     ]
-    if summary["keep"]:
-        parts.append("Kept: " + "; ".join(_q(e["title"], MAX_TITLE_CHARS) for e in summary["keep"][:12]) + ".")
-    for e in summary["revise"][:12]:
-        parts.append(f"Revise {_q(e['title'], MAX_TITLE_CHARS)}"
-                     + (f", note {_q(e['note'], MAX_NOTE_CHARS)}" if e.get("note") else "") + ".")
-    for e in summary["discard"][:12]:
-        if e.get("note"):
-            parts.append(f"Discarded {_q(e['title'], MAX_TITLE_CHARS)}, note {_q(e['note'], MAX_NOTE_CHARS)}.")
+    kept = summary["keep"]
+    if kept:
+        more = f" (+{len(kept) - BRIEF_ROWS} more)" if len(kept) > BRIEF_ROWS else ""
+        parts.append("Kept: " + "; ".join(_q(e["title"], MAX_TITLE_CHARS) for e in kept[:BRIEF_ROWS]) + more + ".")
+    word = {"keep": "Kept", "revise": "Revise", "discard": "Discarded"}
+    rows = [(e.get("number", 0), d, e) for d in ("keep", "revise", "discard") for e in summary[d]
+            if d == "revise" or e.get("note")]
+    rows.sort(key=lambda r: r[0])
+    for _, d, e in rows[:BRIEF_ROWS]:
+        parts.append(f"{word[d]} {_q(e['title'], MAX_TITLE_CHARS)}"
+                     + (f", note {_brief_note(e['note'])}" if e.get("note") else "") + ".")
+    if len(rows) > BRIEF_ROWS:
+        parts.append(f"(+{len(rows) - BRIEF_ROWS} more cards with notes.)")
+    if summary["revise"] or not kept:
+        parts.append(f"A next round is published with swipe_publish and redo_of \"{summary['deck_id']}\".")
     parts.append("swipe_results has the full detail.")
     return " ".join(parts)
