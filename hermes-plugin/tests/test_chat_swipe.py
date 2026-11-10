@@ -288,7 +288,7 @@ class FinishAndViewTests(Base):
         self.assertEqual(v["buttons"][1], [("↶ Undo", "u")])
         cs.add_note(self.root, s["key"], USER, "bigger")
         v = cs.view(self.root, cs.get(self.root, s["key"]))
-        self.assertIn("Redo “Shirt 1”. A voice note adds why.", v["caption"])
+        self.assertIn("Redo “Shirt 1”. Type a note to say why.", v["caption"])
         self.tap(s, "k")
         v = cs.view(self.root, cs.get(self.root, s["key"]))
         self.assertIn("All 2 swiped: 1 keep, 1 redo, 0 cut.", v["caption"])

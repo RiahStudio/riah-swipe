@@ -1,4 +1,4 @@
-"""In-chat swiping: one message per deck, one tap per card, voice or text notes on any card.
+"""In-chat swiping: one message per deck, one tap per card, a note on any card.
 
 Platform-agnostic. A chat layer (chat_telegram.py today) draws the card and turns taps and
 incoming messages into calls here; this module owns the state and writes the verdicts to the
@@ -539,7 +539,7 @@ def view(root: Path, session: dict) -> dict:
                 if v.get("decision") == "revise" and not v.get("note"):
                     lines.append(f"Redo “{name}”: say what should change, or tap Send.")
                 else:
-                    lines.append(f"Send a voice note to add to “{name}”, or tap Send.")
+                    lines.append(f"Type a note to add to “{name}”, or tap Send.")
         elif status == "sent" and session.get("delivery") == "next_message":
             lines.append(f"Done: {tally}. Hermes gets these with your next message.")
         elif status == "sent":
@@ -555,11 +555,11 @@ def view(root: Path, session: dict) -> dict:
             v = _verdicts(root, session["deck_id"]).get(last) or {}
             name = card_title(root, session["deck_id"], last)
             if v.get("decision") == "revise" and not v.get("note"):
-                lines.append(f"Redo “{name}”: what should change? Send a voice note.")
+                lines.append(f"Redo “{name}”: what should change? Type a note.")
             elif v.get("decision") in LABEL:
-                lines.append(f"{LABEL[v['decision']]} “{name}”. A voice note adds why.")
+                lines.append(f"{LABEL[v['decision']]} “{name}”. Type a note to say why.")
         elif not last and not session.get("notice") and not session.get("held"):
-            lines.append("Tap a button. Say or type a note on any card.")
+            lines.append("Tap a button. Type a note on any card.")
         if session.get("held"):
             lines.append(f"Note for this one: “{core.clean_text(session['held'], 120)}”")
         if shown:

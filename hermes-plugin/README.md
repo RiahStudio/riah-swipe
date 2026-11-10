@@ -9,7 +9,7 @@ has the verdicts and remakes the ones you sent back.
 
 It works on your desktop. Turn on phone mode and it works from your phone on the
 same Wi-Fi too. On Telegram you don't need the board at all: the cards show up
-right in the chat with buttons, and you can talk back with voice notes.
+right in the chat with buttons, and you can type a note on any card to say why.
 
 ## Install
 
@@ -76,18 +76,18 @@ one message that flips from card to card. Each card has four buttons: **Keep**,
 **Cut**, **Redo** and **Undo**. The board link still works if you'd rather use
 it, and both stay in sync.
 
-Notes are optional, on any card:
+Notes are the point: a quick way to tell Hermes why. They're optional, on any
+card, and a note is just a message you type. Dictating with your keyboard's
+mic or whatever voice app you already use works the same, since it arrives as
+text. There's nothing extra to install.
 
-- After you tap a button, send a voice note or type a message, and it's
+- After you tap a button, type a message and it's
   attached to the card you just decided. "Kept it, the blue one reads better"
   or "Cut, the hands look wrong" both work. A note can be about the whole
   batch, too ("none of these feel like summer"); Hermes reads every note
   before it makes the next round.
 - Before your first tap, or right after Undo, a note goes with the card on
   screen and is saved when you decide it.
-- Keep swiping while a voice note is being turned into text. The card says
-  "Listening to your voice note…" and the note still lands on the card you
-  said it for.
 - Redo asks for a note but never waits for one. Send nothing and keep going.
 - After the last card there's a short wait (30 seconds by default, longer if
   you tapped Redo and haven't said what to change yet) for one more note, with
@@ -114,16 +114,16 @@ Type `/swipe stop` to stop swiping in the chat; what you've swiped is saved and
 the rest stay on the board. Decks that were waiting their turn leave the chat
 too, and are still on the board.
 
-Voice notes are turned into text with Hermes' own speech-to-text, the same
-one that lets Hermes understand voice messages. If Hermes already understands
-your voice messages, you're set. If it never has, set that up first (run
-`hermes tools` and pick Local Whisper under Speech-to-Text, which is free), or
-your first voice notes are kept as clips without the words. The audio clip is
-always kept with the deck.
-If the words can't be made out, the card says so and the clip is still saved
-with your verdict, so nothing you said is lost; type the note too if you want
-Hermes to read it. A card whose picture or video won't load in the chat is
-shown as text instead, and you can still swipe it.
+**Telegram voice messages (optional).** If your Hermes already understands
+voice messages, you can send one as a note too. The card says "Listening to
+your voice note…", you can keep swiping, and the words land on the card you
+said them for. If your Hermes doesn't do speech-to-text, or the words can't be
+made out, the card says so and the clip is saved with your verdict; type the
+note if you want Hermes to read it. You never need this: typed notes do
+everything.
+
+A card whose picture or video won't load in the chat is shown as text instead,
+and you can still swipe it.
 
 Swiping in chat needs Hermes 0.22.3 or newer (tested on 0.22.5), with plugins running inside
 Hermes (`plugins.isolation: in_process`, which is the default). On older
@@ -170,7 +170,7 @@ phone can't connect, allow inbound connections for Python on private networks.
 |---|---|
 | `swipe_publish` | Makes a deck from a list of cards (text, image, video or audio) and returns the board link. `redo_of` makes it the next round of an earlier deck, and a card's `replaces` says which card it remakes |
 | `swipe_status` | The board link and progress on recent decks |
-| `swipe_results` | Keep, revise and discard lists for one deck, with every note in the order you gave it, saved voice clips, and what to do next |
+| `swipe_results` | Keep, revise and discard lists for one deck, with every note in the order you gave it, any saved voice clips, and what to do next |
 | `swipe_wait` | Waits for you to finish a deck. Only in interactive sessions; returns at once anywhere else |
 
 There are two hooks:
@@ -179,7 +179,7 @@ There are two hooks:
   turn gets a short summary of your verdicts so Hermes can follow up without
   being asked. It holds off during the last-note wait in Telegram.
 - `pre_gateway_dispatch`. While a deck is open in a Telegram chat, it catches a
-  voice note or typed note from the person swiping and attaches it to the
+  typed note (or a voice message) from the person swiping and attaches it to the
   card, so it doesn't start a new Hermes turn. Everything else (other people,
   other chats, commands, photos, a reply to some other message, any chat with
   no open deck) passes through untouched. A deck left alone for 10 minutes
@@ -246,15 +246,15 @@ Everything stays on your computer. Specifically:
   computer. The secret is never a sign-in cookie. A program running as you
   could read it, as it could read anything else in your Hermes folder.
   Swiping in Telegram adds `data/chat-swipe.json` (which deck is open in which
-  chat, and the card message's id) and copies of your voice notes in
-  `data/chat-notes/`. Nothing is deleted automatically; to clear everything,
+  chat, and the card message's id) and, if you send voice messages as notes, copies of
+  those clips in `data/chat-notes/`. Nothing is deleted automatically; to clear everything,
   delete the `plugin-data/riah-swipe/` folder.
 - **Files it reads.** When a card points at a local image, video or audio file,
   that one file is copied into the deck folder so the board can show it, and
   only if it sits inside an allowed folder (the working folder unless it is
   your home folder, Hermes' media caches, the temp folder, or `media_dirs`).
-  For a voice note sent while swiping, it reads the copy Hermes already
-  downloaded. It reads nothing else outside its data folder.
+  For a voice message sent as a note while swiping, it reads the copy Hermes
+  already downloaded. It reads nothing else outside its data folder.
 - **Messages it sends.** With `allow_gateway_injection: true`, when you finish
   a deck that Hermes made in a chat, the plugin hands that chat one short
   summary of your verdicts through Hermes' own `inject_message`. It goes only
@@ -267,8 +267,9 @@ Everything stays on your computer. Specifically:
 - **Telegram messages.** Swiping in chat sends, edits and deletes only the one
   card message in the chat that made the deck, through Hermes' own connected
   bot. It sends card media you gave it (a local file, or an `https://` link
-  Telegram fetches). Voice notes go through Hermes' speech-to-text, which may
-  use whatever provider you set up there.
+  Telegram fetches). Typed notes stay on your computer. A voice message sent as a
+  note goes through Hermes' own speech-to-text, if you set one up, which may
+  use whatever provider you chose there.
 - **No other outbound network calls, no telemetry, no accounts, no credentials.**
 - **No background processes.** The server is a thread, not a separate process.
 - **Waiting for a person.** `swipe_wait` only blocks in interactive surfaces

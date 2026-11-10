@@ -9,12 +9,12 @@ description: >-
   audio, names, taglines, script pages) into a swipe deck; you swipe right to keep,
   left to discard, up to revise with a note, on your desktop or your phone. Hermes
   gets the verdicts back and regenerates the ones you sent back for revision. On
-  Telegram you can swipe right in the chat with Keep, Cut and Redo buttons, and add a
-  voice or typed note to any card.
+  Telegram you can swipe right in the chat with Keep, Cut and Redo buttons, and type a
+  note on any card to say why.
 author: Riah Studio
 license: MIT
 homepage: https://github.com/RiahStudio/riah-swipe
-tags: [review, images, creative, phone, feedback, telegram, voice]
+tags: [review, images, creative, phone, feedback, telegram, notes]
 provides_tools:
   - swipe_publish
   - swipe_status
@@ -66,7 +66,7 @@ config_schema:
     description: >-
       When a deck is published from a Telegram chat, show the cards right in that chat with
       Keep, Cut, Redo and Undo buttons instead of only sending a board link. After any tap
-      you can send a voice note or a typed note to say why.
+      you can type a note to say why.
   chat_finish_delay:
     type: int
     default: 30

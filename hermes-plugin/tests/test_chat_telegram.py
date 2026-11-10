@@ -274,7 +274,7 @@ class TapFlowTests(LayerBase):
         first_id = self.session()["message_id"]
         q = await self.press("k")
         self.assertEqual(q.answers[0][0], "Kept")
-        self.assertEqual(self.bot.last()["media"].caption.splitlines()[0], "Kept “Shirt 1”. A voice note adds why.")
+        self.assertEqual(self.bot.last()["media"].caption.splitlines()[0], "Kept “Shirt 1”. Type a note to say why.")
         self.assertEqual(self.bot.names()[-1], "edit_message_media")
         self.assertEqual(self.session()["message_id"], first_id)  # same message flips
         q = await self.press("r")

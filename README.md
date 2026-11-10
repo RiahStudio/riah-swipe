@@ -18,7 +18,7 @@ MCP client read the board and record verdicts too. Free, MIT-licensed, zero runt
 ### Using Hermes?
 
 There's a Hermes plugin. Hermes makes the deck, you swipe it (on Telegram, right in the chat
-with Keep / Cut / Redo buttons and optional voice notes), and Hermes gets your verdicts back.
+with Keep / Cut / Redo buttons and a typed note on any card), and Hermes gets your verdicts back.
 
 ```bash
 hermes plugins install RiahStudio/riah-swipe/hermes-plugin

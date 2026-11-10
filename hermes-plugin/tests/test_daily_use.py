@@ -226,9 +226,9 @@ class QueueTests(Base):
 class NoteTests(Base):
     def test_first_card_says_notes_work_on_any_card(self):
         s = self.open()
-        self.assertIn("Say or type a note on any card", cs.view(self.root, s)["caption"])
+        self.assertIn("Type a note on any card", cs.view(self.root, s)["caption"])
         self.tap(s, "k")
-        self.assertNotIn("Say or type a note", cs.view(self.root, cs.get(self.root, s["key"]))["caption"])
+        self.assertNotIn("Type a note on any card", cs.view(self.root, cs.get(self.root, s["key"]))["caption"])
 
     def test_a_late_note_goes_to_the_card_it_was_said_for(self):
         s = self.open()
@@ -270,7 +270,7 @@ class NoteTests(Base):
         cur = cs.get(self.root, s["key"])
         self.assertIn("Redo “Shirt 1”: say what should change, or tap Send.", cs.view(self.root, cur)["caption"])
         cs.add_note(self.root, s["key"], USER, "warmer")
-        self.assertIn("Send a voice note to add", cs.view(self.root, cs.get(self.root, s["key"]))["caption"])
+        self.assertIn("Type a note to add", cs.view(self.root, cs.get(self.root, s["key"]))["caption"])
 
     def test_overdue_decks_are_found_for_a_day(self):
         s = self.open(n=1)
