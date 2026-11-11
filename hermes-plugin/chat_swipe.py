@@ -225,7 +225,7 @@ def tap(root: Path, key: str, token: str, pos: int, action: str, user_id: Any,
     """One button press. Returns {"ok", "reason"?, "session", "finished", "decision"?, "card"?}.
 
     reason: "gone" (no such session), "not_yours", "stale" (old message, double tap, or the card
-    moved on), "nothing_to_undo". `action` is k/c/r (keep/cut/redo), u (undo) or s (send now)."""
+    moved on), "nothing_to_undo". `action` is k/c/r (keep/cut/redo), n (note), u (undo) or s (send now)."""
     root = core.ensure_root(root)
 
     def fn(chats):
@@ -272,6 +272,17 @@ def tap(root: Path, key: str, token: str, pos: int, action: str, user_id: Any,
             s["status"] = "active"
             s["notice"] = ""
             out.update(decision="undo", card=card_id)
+        elif action == "n":
+            # Note: the next message is a note. On a card, it's for that card (held until it's
+            # swiped); at the end, it's for the last card swiped.
+            if pos != s["pos"] or s.get("status") not in ("active", "finishing"):
+                return {"ok": False, "reason": "stale", "session": dict(s)}
+            if s.get("status") == "active":
+                s["last"] = None
+            target = note_target(s)
+            name = _numbered(root, s, target) if target else "this card"
+            s["notice"] = f"Type your note for {name}."
+            out.update(decision="note", card=target)
         elif action == "s":
             if s.get("status") != "finishing":
                 return {"ok": False, "reason": "stale", "session": dict(s)}
@@ -522,6 +533,13 @@ def card_title(root: Path, deck_id: str, card_id: str) -> str:
     return next((c.get("title") or card_id for c in cards if c.get("id") == card_id), card_id)
 
 
+def _numbered(root: Path, session: dict, card_id: str) -> str:
+    """#2 “Title”: the number the card shows in the chat."""
+    order = session.get("order") or []
+    name = f"“{card_title(root, session['deck_id'], card_id)}”"
+    return f"#{order.index(card_id) + 1} {name}" if card_id in order else name
+
+
 def view(root: Path, session: dict) -> dict:
     """What the chat message should show now: the card (or the last one, when done), the
     caption lines, and which buttons."""
@@ -573,7 +591,8 @@ def view(root: Path, session: dict) -> dict:
             lines.append(f"Note for this one: “{core.clean_text(session['held'], 120)}”")
         if shown:
             lines.append("")
-            lines.append(shown.get("title") or "")
+            name = shown.get("title") or ""
+            lines.append(f"#{pos + 1} · {name}" if name else f"#{pos + 1}")  # so a note can say "#2"
             if shown.get("kind") in ("image", "video", "audio") and shown.get("preview"):
                 words = " ".join(str(shown["preview"]).split())
                 lines.append(words if len(words) <= PREVIEW_CHARS else words[: PREVIEW_CHARS - 1].rstrip() + "…")
@@ -586,12 +605,14 @@ def view(root: Path, session: dict) -> dict:
     buttons: list[list[tuple[str, str]]] = []
     if status == "active" and pos < total:
         buttons.append([("✓ Keep", "k"), ("✕ Cut", "c"), ("↻ Redo", "r")])
+        row = [("✎ Note", "n")]
         if session.get("history"):
-            buttons.append([("↶ Undo", "u")])
+            row.append(("↶ Undo", "u"))
+        buttons.append(row)
     elif status == "finishing":
-        row = [("Send ➜", "s")]
+        row = [("✎ Note", "n"), ("Send ➜", "s")]
         if session.get("history"):
-            row.insert(0, ("↶ Undo", "u"))
+            row.insert(1, ("↶ Undo", "u"))
         buttons.append(row)
     return {"card": shown, "caption": "\n".join(lines).strip(), "buttons": buttons, "status": status,
             "pos": pos, "total": total, "deck": deck}

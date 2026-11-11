@@ -22,9 +22,9 @@ from . import chat_swipe as cs
 logger = logging.getLogger(__name__)
 
 PLATFORM = "telegram"
-CALLBACK_RE = re.compile(r"^rs:([kcrus]):([0-9a-f]{8}):(\d{1,4})$")
+CALLBACK_RE = re.compile(r"^rs:([kcruns]):([0-9a-f]{8}):(\d{1,4})$")
 TOAST = {"keep": "Kept", "discard": "Cut", "revise": "Redo: say what should change", "undo": "Undone",
-         "send": "Done"}
+         "send": "Done", "note": "Type your note below"}
 LISTENING = "Listening to your voice note…"
 NO_MEDIA = "(This card's file wouldn't load in the chat. It's on the board.)"
 TRANSCRIBE_TIMEOUT = 90.0  # a voice note that takes longer is kept as a clip, without text

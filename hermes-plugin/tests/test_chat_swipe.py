@@ -183,6 +183,43 @@ class NoteTests(Base):
         self.assertEqual(cur["history"], [])
         self.assertTrue(cs.wants_note(cur, USER))
 
+    def test_the_note_button_makes_the_next_message_a_note_for_the_card_on_screen(self):
+        s = self.open()
+        self.assertFalse(cs.wants_note(cs.get(self.root, s["key"]), USER))
+        out = self.tap(s, "n")
+        self.assertTrue(out["ok"])
+        self.assertEqual((out["decision"], out["card"]), ("note", "dk-01"))
+        cur = cs.get(self.root, s["key"])
+        self.assertTrue(cs.wants_note(cur, USER))
+        self.assertIn("Type your note for #1 “Shirt 1”.", cs.view(self.root, cur)["caption"])
+        self.assertTrue(cs.add_note(self.root, s["key"], USER, "warmer")["held"])
+        self.tap(s, "k")
+        self.assertEqual(self.verdicts()["dk-01"]["note"], "warmer")
+
+    def test_the_note_button_after_a_tap_is_for_the_card_now_on_screen(self):
+        s = self.open()
+        self.tap(s, "k")
+        self.tap(s, "n")
+        out = cs.add_note(self.root, s["key"], USER, "too dark")
+        self.assertTrue(out["held"])
+        self.assertFalse(self.verdicts()["dk-01"].get("note"))
+        self.tap(s, "c")
+        self.assertEqual(self.verdicts()["dk-02"]["note"], "too dark")
+
+    def test_the_note_button_at_the_end_is_for_the_last_card(self):
+        s = self.open(n=2)
+        self.tap(s, "k")
+        self.tap(s, "r")
+        out = self.tap(s, "n")
+        self.assertEqual(out["card"], "dk-02")
+        cs.add_note(self.root, s["key"], USER, "less text")
+        self.assertEqual(self.verdicts()["dk-02"]["note"], "less text")
+
+    def test_an_old_note_button_is_stale(self):
+        s = self.open()
+        self.tap(s, "k")
+        self.assertEqual(self.tap(s, "n", pos=0)["reason"], "stale")
+
     def test_note_before_first_tap_is_held_for_the_card_on_screen(self):
         s = self.open()
         out = cs.add_note(self.root, s["key"], USER, "this one is close", to_card=True)
@@ -299,19 +336,21 @@ class FinishAndViewTests(Base):
         s = self.open(n=2)
         v = cs.view(self.root, cs.get(self.root, s["key"]))
         self.assertEqual([a for _, a in v["buttons"][0]], ["k", "c", "r"])
-        self.assertEqual(len(v["buttons"]), 1)  # no Undo before the first tap
+        self.assertEqual(v["buttons"][1], [("✎ Note", "n")])  # no Undo before the first tap
         self.assertIn("1 of 2", v["caption"])
+        self.assertIn("#1 · Shirt 1", v["caption"])
         self.tap(s, "r")
         v = cs.view(self.root, cs.get(self.root, s["key"]))
         self.assertIn("Redo “Shirt 1”: what should change?", v["caption"])
-        self.assertEqual(v["buttons"][1], [("↶ Undo", "u")])
+        self.assertEqual(v["buttons"][1], [("✎ Note", "n"), ("↶ Undo", "u")])
+        self.assertIn("#2 · Shirt 2", v["caption"])
         cs.add_note(self.root, s["key"], USER, "bigger")
         v = cs.view(self.root, cs.get(self.root, s["key"]))
         self.assertIn("Redo “Shirt 1”. Type a note to say why.", v["caption"])
         self.tap(s, "k")
         v = cs.view(self.root, cs.get(self.root, s["key"]))
         self.assertIn("All 2 swiped: 1 keep, 1 redo, 0 cut.", v["caption"])
-        self.assertEqual([a for _, a in v["buttons"][0]], ["u", "s"])
+        self.assertEqual([a for _, a in v["buttons"][0]], ["n", "u", "s"])
         cs.finish(self.root, s["key"], s["token"])
         v = cs.view(self.root, cs.get(self.root, s["key"]))
         self.assertIn("Sent to Hermes", v["caption"])

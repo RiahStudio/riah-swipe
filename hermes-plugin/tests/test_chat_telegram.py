@@ -283,7 +283,7 @@ class TapFlowTests(LayerBase):
         self.assertEqual(self.session()["status"], "finishing")
         kw = self.bot.last()
         self.assertIn("All 3 swiped", kw["caption"])
-        self.assertEqual([b.text for b in kw["reply_markup"].inline_keyboard[0]], ["↶ Undo", "Send ➜"])
+        self.assertEqual([b.text for b in kw["reply_markup"].inline_keyboard[0]], ["✎ Note", "↶ Undo", "Send ➜"])
         await self.press("s")
         self.assertEqual(self.done, ["dk"])
         self.assertIn("Sent to Hermes", self.bot.last()["caption"])
