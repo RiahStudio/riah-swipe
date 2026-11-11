@@ -226,9 +226,9 @@ class QueueTests(Base):
 class NoteTests(Base):
     def test_first_card_says_notes_work_on_any_card(self):
         s = self.open()
-        self.assertIn("Type a note on any card", cs.view(self.root, s)["caption"])
+        self.assertIn("then type a note on any card", cs.view(self.root, s)["caption"])
         self.tap(s, "k")
-        self.assertNotIn("Type a note on any card", cs.view(self.root, cs.get(self.root, s["key"]))["caption"])
+        self.assertNotIn("then type a note on any card",cs.view(self.root, cs.get(self.root, s["key"]))["caption"])
 
     def test_a_late_note_goes_to_the_card_it_was_said_for(self):
         s = self.open()
@@ -511,7 +511,7 @@ class TelegramDailyTests(T.LayerBase):
 class BoardFinishTests(Base):
     def test_a_note_typed_before_the_board_swipe_is_kept(self):
         s = self.open(n=1)
-        self.assertTrue(cs.add_note(self.root, s["key"], USER, "too busy")["held"])
+        self.assertTrue(cs.add_note(self.root, s["key"], USER, "too busy", to_card=True)["held"])
         self.assertEqual(cs.close_finished(self.root, "dk"), [])  # nothing decided yet
         core.set_verdict(self.root, "dk", "dk-01", "revise", "")
         closed = cs.close_finished(self.root, "dk")

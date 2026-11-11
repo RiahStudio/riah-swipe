@@ -5,7 +5,9 @@ incoming messages into calls here; this module owns the state and writes the ver
 same file the board uses, so a deck can start in the chat and finish on the board.
 
 Notes follow one rule: a note sent after a tap belongs to the card just tapped; a note sent
-before the first tap (or right after an Undo) is held for the card on screen.
+right after an Undo is held for the card on screen. Until the first tap on a deck, typed
+messages go to Hermes as usual (a fresh deck shouldn't swallow a chat that was mid-sentence);
+only a reply to the card itself is held as its note.
 
 One deck is on screen per chat. A deck published while the person is still swiping another
 waits in line and shows up when that one is sent.
@@ -279,6 +281,7 @@ def tap(root: Path, key: str, token: str, pos: int, action: str, user_id: Any,
         else:
             return {"ok": False, "reason": "stale", "session": dict(s)}
         s["touched"] = s["tapped"] = core.now_iso()
+        s["swiped"] = True  # from here on, a typed message is a note
         out["session"] = dict(s)
         return out
 
@@ -336,14 +339,19 @@ def finishing_decks(root: Path) -> set:
     return {s.get("deck_id") for s in finishing_sessions(root)}
 
 
-def wants_note(session: dict | None, user_id: Any) -> bool:
-    """Should a message from `user_id` in this chat be taken as a note right now?"""
+def wants_note(session: dict | None, user_id: Any, to_card: bool = False) -> bool:
+    """Should a message from `user_id` in this chat be taken as a note right now?
+
+    `to_card`: the message is a reply to the card itself. Before the first tap only those
+    count; anything else typed then is for Hermes."""
     if not session or session.get("status") not in ("active", "finishing"):
         return False
     if not session.get("user_id") or str(user_id) != session["user_id"]:
         return False  # no known swiper: never swallow anyone's messages
     if session.get("status") == "finishing":
         return _still_finishing(session)
+    if not (to_card or session.get("swiped") or session.get("history")):
+        return False  # nothing tapped on this deck yet
     return _minutes_since(session.get("tapped") or session.get("touched")) <= NOTE_WINDOW_MINUTES
 
 
@@ -364,18 +372,19 @@ def _keep_audio(root: Path, deck_id: str, card_id: str, audio_path: Any) -> str 
 
 
 def add_note(root: Path, key: str, user_id: Any, text: str, audio_path: Any = None,
-             target: str | None = None) -> dict:
+             target: str | None = None, to_card: bool = False) -> dict:
     """Attach a note. Returns {"ok", "card", "title", "held"(bool), "session"} or {"ok": False}.
 
     `target`: the card the note was meant for when it arrived (see note_target), for a voice
     note that took a while to turn into text while the person kept swiping. A voice note with
-    no text still counts: the clip is kept and the note says so."""
+    no text still counts: the clip is kept and the note says so. `to_card`: a reply to the
+    card (see wants_note)."""
     root = core.ensure_root(root)
     text = core.clean_text(text, core.MAX_NOTE_CHARS)
 
     def fn(chats):
         s = chats.get(key)
-        if not wants_note(s, user_id):
+        if not wants_note(s, user_id, to_card):
             return {"ok": False, "reason": "not_listening"}
         if not text and not audio_path:
             return {"ok": False, "reason": "empty"}
@@ -559,7 +568,7 @@ def view(root: Path, session: dict) -> dict:
             elif v.get("decision") in LABEL:
                 lines.append(f"{LABEL[v['decision']]} “{name}”. Type a note to say why.")
         elif not last and not session.get("notice") and not session.get("held"):
-            lines.append("Tap a button. Type a note on any card.")
+            lines.append("Tap a button, then type a note on any card.")
         if session.get("held"):
             lines.append(f"Note for this one: “{core.clean_text(session['held'], 120)}”")
         if shown:

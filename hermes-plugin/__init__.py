@@ -590,7 +590,7 @@ def handle_publish(args: dict, session_id: str = "", task_id: str = "", **_: Any
             if not board_error:
                 out.update(_links(info))
             tell = (f"Your deck '{deck['name']}' is right here in the chat: tap Keep, Cut or Redo on each "
-                    "card. Type a note on any card to tell me why, and Undo goes back one. "
+                    "card. After a tap, type a note to tell me why, and Undo goes back one. "
                     "The verdicts come back to me when you're done.")
             out["agent_note"] = ("The cards are already posted in this chat with buttons. Don't resend "
                                  "the images or list them; just tell the person it's ready.")

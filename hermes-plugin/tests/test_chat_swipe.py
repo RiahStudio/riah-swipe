@@ -165,9 +165,27 @@ class NoteTests(Base):
         v = self.verdicts()["dk-01"]
         self.assertEqual((v["decision"], v["note"]), ("revise", "bigger mullet"))
 
+    def test_before_the_first_tap_typed_messages_go_to_hermes(self):
+        s = self.open()
+        cur = cs.get(self.root, s["key"])
+        self.assertFalse(cs.wants_note(cur, USER))
+        self.assertFalse(cs.add_note(self.root, s["key"], USER, "and make the real shirts")["ok"])
+        self.assertEqual(cs.get(self.root, s["key"])["held"], "")
+        self.assertTrue(cs.wants_note(cur, USER, to_card=True))  # a reply to the card still counts
+        self.tap(s, "k")
+        self.assertTrue(cs.wants_note(cs.get(self.root, s["key"]), USER))
+
+    def test_after_undoing_the_first_tap_notes_still_count(self):
+        s = self.open()
+        self.tap(s, "c")
+        self.tap(s, "u")
+        cur = cs.get(self.root, s["key"])
+        self.assertEqual(cur["history"], [])
+        self.assertTrue(cs.wants_note(cur, USER))
+
     def test_note_before_first_tap_is_held_for_the_card_on_screen(self):
         s = self.open()
-        out = cs.add_note(self.root, s["key"], USER, "this one is close")
+        out = cs.add_note(self.root, s["key"], USER, "this one is close", to_card=True)
         self.assertTrue(out["held"])
         self.assertEqual(self.verdicts(), {})
         self.tap(s, "k")
@@ -196,6 +214,7 @@ class NoteTests(Base):
 
     def test_note_window_closes(self):
         s = self.open()
+        self.tap(s, "k")
         cur = cs.get(self.root, s["key"])
         self.assertTrue(cs.wants_note(cur, USER))
         cur["tapped"] = (datetime.now(timezone.utc) - timedelta(minutes=31)).isoformat()
@@ -256,7 +275,7 @@ class NoteTests(Base):
         s = self.open()
         clip = self.tmp / "v.ogg"
         clip.write_bytes(b"OggS")
-        cs.add_note(self.root, s["key"], USER, "nice", str(clip))
+        cs.add_note(self.root, s["key"], USER, "nice", str(clip), to_card=True)
         self.tap(s, "k")
         self.assertEqual(len(self.verdicts()["dk-01"]["audio"]), 1)
 
@@ -300,7 +319,7 @@ class FinishAndViewTests(Base):
 
     def test_held_note_shows_on_the_card(self):
         s = self.open()
-        cs.add_note(self.root, s["key"], USER, "close one")
+        cs.add_note(self.root, s["key"], USER, "close one", to_card=True)
         v = cs.view(self.root, cs.get(self.root, s["key"]))
         self.assertIn("Note for this one: “close one”", v["caption"])
 

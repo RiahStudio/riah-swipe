@@ -419,9 +419,17 @@ class NoteFlowTests(LayerBase):
             out = await self.layer.on_dispatch(event(mtype="voice", media=[str(clip)]))
         self.assertEqual(out["action"], "skip")
 
-    async def test_note_before_first_tap_is_held(self):
+    async def test_a_message_right_after_the_deck_lands_goes_to_hermes(self):
         await self.start()
-        await self.layer.on_dispatch(event("this one is close"))
+        self.assertIsNone(await self.layer.on_dispatch(event("also redo the logo")))
+        self.assertEqual(self.session()["held"], "")
+        await self.press("k")
+        self.assertEqual(self.verdicts()["dk-01"]["note"], "")
+
+    async def test_a_reply_to_the_card_before_the_first_tap_is_held(self):
+        await self.start()
+        out = await self.layer.on_dispatch(event("this one is close", reply_to=self.session()["message_id"]))
+        self.assertEqual(out["action"], "skip")
         self.assertIn("Note for this one", self.bot.last()["caption"])
         await self.press("k")
         self.assertEqual(self.verdicts()["dk-01"]["note"], "this one is close")

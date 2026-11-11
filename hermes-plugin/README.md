@@ -86,8 +86,11 @@ text. There's nothing extra to install.
   or "Cut, the hands look wrong" both work. A note can be about the whole
   batch, too ("none of these feel like summer"); Hermes reads every note
   before it makes the next round.
-- Before your first tap, or right after Undo, a note goes with the card on
-  screen and is saved when you decide it.
+- Right after Undo, a note goes with the card on screen and is saved when you
+  decide it.
+- Until your first tap on a new deck, whatever you type still goes to Hermes,
+  so a deck landing mid-conversation never swallows what you were saying. To
+  note the first card before deciding it, reply to the card.
 - Redo asks for a note but never waits for one. Send nothing and keep going.
 - After the last card there's a short wait (30 seconds by default, longer if
   you tapped Redo and haven't said what to change yet) for one more note, with

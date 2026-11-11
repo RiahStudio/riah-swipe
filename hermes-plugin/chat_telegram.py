@@ -311,14 +311,16 @@ class TelegramSwipe:
             root = self.root_fn()
             session = await asyncio.to_thread(cs.get, root, key)
             user_id = getattr(source, "user_id", None) or getattr(event, "user_id", None)
-            if not cs.wants_note(session, user_id):
+            reply_to = str(getattr(event, "reply_to_message_id", None) or "")
+            thread = str(getattr(source, "thread_id", "") or "")
+            card_msg = str((session or {}).get("message_id") or "")
+            to_card = bool(reply_to and card_msg and reply_to == card_msg)
+            if not cs.wants_note(session, user_id, to_card):
                 return None
             text = str(getattr(event, "text", "") or "").strip()
             mtype = str(getattr(getattr(event, "message_type", None), "value", getattr(event, "message_type", "")))
-            reply_to = str(getattr(event, "reply_to_message_id", None) or "")
-            thread = str(getattr(source, "thread_id", "") or "")
             if (reply_to and reply_to != thread  # in a forum topic every message "replies" to the topic
-                    and session.get("message_id") and reply_to != session["message_id"]):
+                    and card_msg and not to_card):
                 return None  # replying to something else: that's for Hermes
             audio = None
             if mtype in ("voice", "audio"):
@@ -329,12 +331,13 @@ class TelegramSwipe:
                 return None
             if not audio:
                 async with self._lock_for(key):
-                    return await self._save_note(root, key, user_id, text, None, None, session["token"])
+                    return await self._save_note(root, key, user_id, text, None, None, session["token"],
+                                                 to_card)
             # A voice note. Pin it to the card it was sent for, say we're listening, and turn it
             # into text outside the chat's lock so the buttons keep working meanwhile.
             async with self._lock_for(key):
                 session = await asyncio.to_thread(cs.get, root, key)
-                if not cs.wants_note(session, user_id):
+                if not cs.wants_note(session, user_id, to_card):
                     return None
                 target = cs.note_target(session)
                 token = session["token"]
@@ -353,19 +356,19 @@ class TelegramSwipe:
                 logger.info("riah-swipe: voice note transcription failed", exc_info=True)
                 note = None
             async with self._lock_for(key):
-                return await self._save_note(root, key, user_id, note or "", audio, target, token)
+                return await self._save_note(root, key, user_id, note or "", audio, target, token, to_card)
         except Exception:
             logger.warning("riah-swipe: note capture failed", exc_info=True)
             return None
 
     async def _save_note(self, root: Path, key: str, user_id: Any, note: str, audio: Any,
-                         target: str | None, token: str) -> dict | None:
+                         target: str | None, token: str, to_card: bool = False) -> dict | None:
         """Attach the note and redraw the card (the chat's lock is held). Returns the hook's
         answer: skip the message, or None to let Hermes have it after all."""
-        out = await asyncio.to_thread(cs.add_note, root, key, user_id, note, audio, target)
+        out = await asyncio.to_thread(cs.add_note, root, key, user_id, note, audio, target, to_card)
         if not out.get("ok") and out.get("reason") == "no_card" and target:
             # that card was undone and the deck moved on: the note goes with what's up now
-            out = await asyncio.to_thread(cs.add_note, root, key, user_id, note, audio, None)
+            out = await asyncio.to_thread(cs.add_note, root, key, user_id, note, audio, None, to_card)
         if not out.get("ok"):
             if not audio:
                 return None
