@@ -488,7 +488,7 @@ class TelegramSwipe:
         if not fresh and msg_id and session.get("message_kind") == want:
             try:
                 if want == "media" and not same_card:
-                    file = await asyncio.to_thread(_file, src, session, card)
+                    file = await asyncio.to_thread(_file, src, session, card, kind)
                     media = _input_media(kind, file, _trim(caption, CAPTION_MAX))
                     sent = await bot.edit_message_media(chat_id=chat_id, message_id=int(msg_id), media=media,
                                                         reply_markup=markup)
@@ -509,7 +509,7 @@ class TelegramSwipe:
         try:
             if want == "media":
                 try:
-                    file = await asyncio.to_thread(_file, src, session, card)
+                    file = await asyncio.to_thread(_file, src, session, card, kind)
                     sent = await _send_media(bot, kind, chat_id, thread, file,
                                              _trim(caption, CAPTION_MAX), markup)
                 except Exception as e:
@@ -579,8 +579,9 @@ def _words(card: dict | None, caption: str, no_file: bool) -> str:
     return _text_body(card, caption)
 
 
-def _file(src: str | None, session: dict, card: dict | None) -> Any:
-    """A Telegram file_id from an earlier send, an https URL, raw bytes for data:, or the open file."""
+def _file(src: str | None, session: dict, card: dict | None, kind: str | None = None) -> Any:
+    """A Telegram file_id from an earlier send, an https URL, raw bytes for data:, or the open file.
+    A big local image is shrunk first (see _smaller)."""
     fid = (session.get("file_ids") or {}).get((card or {}).get("id"))
     if fid:
         return fid
@@ -589,8 +590,46 @@ def _file(src: str | None, session: dict, card: dict | None) -> Any:
     if src.startswith("https://"):
         return src
     if src.startswith("data:"):
-        return base64.b64decode(src.split(",", 1)[1])
-    return Path(src).read_bytes()
+        data = base64.b64decode(src.split(",", 1)[1])
+    else:
+        data = Path(src).read_bytes()
+    return _smaller(data) if kind == "image" else data
+
+
+SHRINK_OVER = 512 * 1024  # bytes
+SHRINK_SIDE = 1600        # px; Telegram itself shows photos at 1280 on most phones
+
+
+def _smaller(data: bytes) -> bytes:
+    """A big image as a JPEG of at most SHRINK_SIDE px, the way Hermes sends its own images.
+    Telegram re-encodes photos anyway, so this looks the same on the phone but uploads in a
+    fraction of the time (a 1.8 MB PNG becomes ~300 KB). Needs Pillow, which Hermes ships;
+    without it, or on any error, or if the result isn't smaller, the original bytes go."""
+    if len(data) <= SHRINK_OVER:
+        return data
+    try:
+        import io
+
+        from PIL import Image
+
+        with Image.open(io.BytesIO(data)) as im:
+            if getattr(im, "is_animated", False):
+                return data  # a GIF/APNG would lose its motion
+            im.thumbnail((SHRINK_SIDE, SHRINK_SIDE))
+            if im.mode in ("RGBA", "LA", "P"):
+                im = im.convert("RGBA")
+                flat = Image.new("RGB", im.size, (255, 255, 255))
+                flat.paste(im, mask=im.getchannel("A"))
+                im = flat
+            elif im.mode != "RGB":
+                im = im.convert("RGB")
+            out = io.BytesIO()
+            im.save(out, "JPEG", quality=85, optimize=True)
+        small = out.getvalue()
+        return small if len(small) < len(data) else data
+    except Exception as e:
+        logger.debug("riah-swipe: kept the image as is (%s)", e)
+        return data
 
 
 def _input_media(kind: str, file: Any, caption: str):
